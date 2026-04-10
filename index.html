@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FixVault – IT Knowledge Base</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       TOP BAR
+  ════════════════════════════════════════════ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">Fix<strong>Vault</strong></span>
+        <span class="logo-badge">IT KB</span>
+      </div>
+    </div>
+
+    <div class="topbar-center">
+      <div class="search-wrapper">
+        <span class="search-icon">⌕</span>
+        <input
+          type="text"
+          id="searchInput"
+          class="search-input"
+          placeholder="Rechercher un problème, une commande, un tag…"
+          autocomplete="off"
+        />
+        <kbd class="search-kbd">⌘K</kbd>
+        <!-- Suggestions dropdown -->
+        <div id="searchSuggestions" class="search-suggestions hidden"></div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button id="btnHowTo" class="btn btn-ghost">
+        <span>?</span> Comment ça marche
+      </button>
+      <button id="btnAddSolution" class="btn btn-primary">
+        <span>+</span> Ajouter solution
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN LAYOUT
+  ════════════════════════════════════════════ -->
+  <div class="layout">
+
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-label">Catégories</p>
+        <ul class="category-list" id="categoryList">
+          <li class="category-item active" data-cat="all">
+            <span class="cat-icon">▦</span>
+            <span>Toutes</span>
+            <span class="cat-count" id="count-all">0</span>
+          </li>
+          <li class="category-item" data-cat="Windows">
+            <span class="cat-icon">⊞</span>
+            <span>Windows</span>
+            <span class="cat-count" id="count-Windows">0</span>
+          </li>
+          <li class="category-item" data-cat="Network">
+            <span class="cat-icon">⋈</span>
+            <span>Network</span>
+            <span class="cat-count" id="count-Network">0</span>
+          </li>
+          <li class="category-item" data-cat="Printers">
+            <span class="cat-icon">▤</span>
+            <span>Printers</span>
+            <span class="cat-count" id="count-Printers">0</span>
+          </li>
+          <li class="category-item" data-cat="Security">
+            <span class="cat-icon">⊕</span>
+            <span>Security</span>
+            <span class="cat-count" id="count-Security">0</span>
+          </li>
+          <li class="category-item" data-cat="Scripts">
+            <span class="cat-icon">≫</span>
+            <span>Scripts</span>
+            <span class="cat-count" id="count-Scripts">0</span>
+          </li>
+          <li class="category-item" data-cat="Linux">
+            <span class="cat-icon">◈</span>
+            <span>Linux</span>
+            <span class="cat-count" id="count-Linux">0</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section sidebar-stats">
+        <p class="sidebar-label">Stats</p>
+        <div class="stat-row">
+          <span class="stat-label">Solutions</span>
+          <span class="stat-value" id="statTotal">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Résultats</span>
+          <span class="stat-value" id="statFiltered">0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+
+      <!-- Results header -->
+      <div class="content-header">
+        <h1 class="content-title" id="contentTitle">Toutes les solutions</h1>
+        <span class="content-meta" id="contentMeta">Chargement…</span>
+      </div>
+
+      <!-- Loading state -->
+      <div id="loadingState" class="state-view">
+        <div class="spinner"></div>
+        <p>Connexion à la base de données…</p>
+      </div>
+
+      <!-- Empty state -->
+      <div id="emptyState" class="state-view hidden">
+        <span class="state-icon">◎</span>
+        <p>Aucune solution trouvée</p>
+        <button class="btn btn-ghost" id="btnAddFromEmpty">Ajouter la première solution</button>
+      </div>
+
+      <!-- Solutions grid -->
+      <div class="solutions-grid" id="solutionsGrid"></div>
+
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL : DÉTAIL SOLUTION
+  ════════════════════════════════════════════ -->
+  <div id="detailModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-detail">
+      <button class="modal-close" id="closeDetailModal">✕</button>
+
+      <div class="detail-header">
+        <span class="detail-category" id="detailCategory"></span>
+        <h2 class="detail-title" id="detailTitle"></h2>
+        <div class="detail-tags" id="detailTags"></div>
+      </div>
+
+      <div class="detail-section">
+        <h3 class="section-label">⚠ Problème</h3>
+        <p id="detailProblem" class="detail-text"></p>
+      </div>
+
+      <div class="detail-section">
+        <h3 class="section-label">✓ Solution</h3>
+        <p id="detailSolution" class="detail-text"></p>
+      </div>
+
+      <div class="detail-section" id="detailCommandsSection">
+        <h3 class="section-label">⌨ Commandes</h3>
+        <div id="detailCommands" class="commands-list"></div>
+      </div>
+
+      <div class="detail-footer">
+        <span id="detailDate" class="detail-date"></span>
+        <button class="btn btn-ghost btn-sm" id="btnEditSolution">Modifier</button>
+        <button class="btn btn-danger btn-sm" id="btnDeleteSolution">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL : AJOUTER / MODIFIER SOLUTION
+  ════════════════════════════════════════════ -->
+  <div id="formModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-form">
+      <button class="modal-close" id="closeFormModal">✕</button>
+      <h2 class="modal-title" id="formModalTitle">Nouvelle solution</h2>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Titre *</label>
+          <input type="text" id="fTitle" class="form-input" placeholder="Ex: DNS ne se résout pas" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Catégorie *</label>
+          <select id="fCategory" class="form-input form-select">
+            <option value="">— Choisir —</option>
+            <option value="Windows">Windows</option>
+            <option value="Network">Network</option>
+            <option value="Printers">Printers</option>
+            <option value="Security">Security</option>
+            <option value="Scripts">Scripts</option>
+            <option value="Linux">Linux</option>
+          </select>
+        </div>
+
+        <div class="form-group form-full">
+          <label class="form-label">Description du problème *</label>
+          <textarea id="fProblem" class="form-input form-textarea" rows="3" placeholder="Décrire le symptôme observé…"></textarea>
+        </div>
+
+        <div class="form-group form-full">
+          <label class="form-label">Solution détaillée *</label>
+          <textarea id="fSolution" class="form-input form-textarea" rows="4" placeholder="Étapes pour résoudre le problème…"></textarea>
+        </div>
+
+        <div class="form-group form-full">
+          <label class="form-label">Commandes <span class="label-hint">(une par ligne)</span></label>
+          <textarea id="fCommands" class="form-input form-textarea form-mono" rows="3" placeholder="ipconfig /flushdns&#10;netsh winsock reset"></textarea>
+        </div>
+
+        <div class="form-group form-full">
+          <label class="form-label">Tags <span class="label-hint">(séparés par des virgules)</span></label>
+          <input type="text" id="fTags" class="form-input" placeholder="dns, réseau, flush, windows10" />
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="cancelForm">Annuler</button>
+        <button class="btn btn-primary" id="submitForm">
+          <span id="submitLabel">Enregistrer</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL : COMMENT ÇA MARCHE ?
+  ════════════════════════════════════════════ -->
+  <div id="howToModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-howto">
+      <button class="modal-close" id="closeHowToModal">✕</button>
+      <div class="howto-header">
+        <span class="howto-logo">⬡</span>
+        <h2>Comment utiliser FixVault</h2>
+        <p>Votre base de connaissances IT personnelle</p>
+      </div>
+
+      <div class="howto-steps">
+        <div class="howto-step">
+          <span class="step-num">01</span>
+          <div class="step-content">
+            <strong>Rechercher un problème</strong>
+            <p>Utilisez la barre de recherche en haut pour chercher par titre, symptôme, commande ou tag. La recherche est instantanée.</p>
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="step-num">02</span>
+          <div class="step-content">
+            <strong>Filtrer par catégorie</strong>
+            <p>Cliquez sur une catégorie dans la colonne gauche (Windows, Network, Linux…) pour afficher uniquement les solutions correspondantes.</p>
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="step-num">03</span>
+          <div class="step-content">
+            <strong>Consulter la solution</strong>
+            <p>Cliquez sur une carte pour voir le détail complet : description du problème, étapes de résolution et commandes prêtes à l'emploi.</p>
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="step-num">04</span>
+          <div class="step-content">
+            <strong>Copier les commandes</strong>
+            <p>Chaque commande dispose d'un bouton <kbd>Copy</kbd>. Un clic suffit pour copier dans le presse-papiers.</p>
+          </div>
+        </div>
+        <div class="howto-step">
+          <span class="step-num">05</span>
+          <div class="step-content">
+            <strong>Ajouter une solution</strong>
+            <p>Vous avez résolu un problème non référencé ? Cliquez sur <strong>+ Ajouter solution</strong> pour l'enregistrer pour la prochaine fois.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="howto-tip">
+        <span>💡</span>
+        <p>Raccourci clavier : <kbd>⌘K</kbd> ou <kbd>Ctrl+K</kbd> pour focuser la recherche instantanément.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts -->
+  <script src="js/supabaseClient.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/modal.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
