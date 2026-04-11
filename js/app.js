@@ -23,6 +23,9 @@ let debounceTimer      = null;
 window.initApp = async function () {
   console.log('[FixVault] Initialisation de l\'application…');
 
+  // Initialiser la session admin (si déjà connecté)
+  await Auth.init();
+
   // Charger les données
   await loadSolutions();
 
@@ -241,6 +244,46 @@ function openSolutionDetail(sol) {
    ÉVÉNEMENTS UI
 ══════════════════════════════════════════════ */
 function bindEvents() {
+
+  /* ── Bouton Admin (login / logout) ── */
+  document.getElementById('btnAuthToggle').addEventListener('click', () => {
+    if (Auth.isAdmin()) {
+      Auth.logout();
+    } else {
+      // Ouvrir la modale de login
+      document.getElementById('loginEmail').value    = '';
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('loginModal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => document.getElementById('loginEmail').focus(), 100);
+    }
+  });
+
+  // Soumettre le login
+  document.getElementById('submitLogin').addEventListener('click', async () => {
+    const email    = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) { Toast.show('Email et mot de passe requis.', 'error'); return; }
+    const ok = await Auth.login(email, password);
+    if (ok) {
+      document.getElementById('loginModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+  });
+
+  // Enter pour valider le login
+  document.getElementById('loginPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('submitLogin').click();
+  });
+
+  document.getElementById('cancelLogin').addEventListener('click', () => {
+    document.getElementById('loginModal').classList.add('hidden');
+    document.body.style.overflow = '';
+  });
+  document.getElementById('closeLoginModal').addEventListener('click', () => {
+    document.getElementById('loginModal').classList.add('hidden');
+    document.body.style.overflow = '';
+  });
 
   /* ── Barre de recherche ── */
   const searchInput = document.getElementById('searchInput');

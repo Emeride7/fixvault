@@ -9,8 +9,8 @@
  *   Dashboard → Settings → API
  */
 
-const SUPABASE_URL = 'https://mgwbmpdniakmqglksnnu.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_u0Is-HqG_4rxAb1klweokw_5vxjL_Zk';
+const SUPABASE_URL = 'https://VOTRE_PROJECT_ID.supabase.co';
+const SUPABASE_ANON_KEY = 'VOTRE_ANON_KEY';
 
 /* ── Initialisation du client Supabase via CDN ── */
 // Le SDK est chargé dynamiquement pour éviter un bundler.

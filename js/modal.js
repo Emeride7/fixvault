@@ -104,7 +104,11 @@ const Modal = (() => {
       : '';
     document.getElementById('detailDate').textContent = date ? `Ajouté le ${date}` : '';
 
-    // Actions
+    // Actions – visibles uniquement pour l'admin
+    const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
+    document.getElementById('btnEditSolution').style.display   = isAdmin ? '' : 'none';
+    document.getElementById('btnDeleteSolution').style.display = isAdmin ? '' : 'none';
+
     document.getElementById('btnEditSolution').onclick   = () => { close('detailModal'); onEdit(sol); };
     document.getElementById('btnDeleteSolution').onclick = () => onDelete(sol.id);
 
