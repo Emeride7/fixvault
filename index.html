@@ -48,11 +48,15 @@
     </div>
 
     <div class="topbar-right">
+      <span id="adminBadge" class="admin-badge hidden">⚿ Admin</span>
       <button id="btnHowTo" class="btn btn-ghost">
         <span>?</span> Comment ça marche
       </button>
       <button id="btnAddSolution" class="btn btn-primary">
         <span>+</span> Ajouter solution
+      </button>
+      <button id="btnAuthToggle" class="btn btn-ghost btn-auth" title="Se connecter en tant qu'administrateur">
+        ⚿ Admin
       </button>
     </div>
   </header>
@@ -296,11 +300,38 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════════════════════════
+       MODAL : CONNEXION ADMIN
+  ════════════════════════════════════════════ -->
+  <div id="loginModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-login">
+      <button class="modal-close" id="closeLoginModal">✕</button>
+      <div class="login-header">
+        <span class="login-icon">⚿</span>
+        <h2>Espace Administrateur</h2>
+        <p>Connectez-vous pour modifier ou supprimer des solutions.</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="loginEmail" class="form-input" placeholder="admin@exemple.com" />
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">Mot de passe</label>
+        <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" />
+      </div>
+      <div class="form-actions" style="margin-top:20px">
+        <button class="btn btn-ghost" id="cancelLogin">Annuler</button>
+        <button class="btn btn-primary" id="submitLogin">Se connecter</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast notification -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- Scripts -->
   <script src="js/supabaseClient.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/search.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/app.js"></script>
