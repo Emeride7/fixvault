@@ -1,0 +1,44 @@
+{
+  "name": "FixVault – IT Knowledge Base",
+  "short_name": "FixVault",
+  "description": "Base de connaissances IT pour techniciens",
+  "start_url": "/fixvault/",
+  "scope": "/fixvault/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d0f12",
+  "theme_color": "#00e5a0",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "icons/screenshot.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Ajouter une solution",
+      "short_name": "Ajouter",
+      "description": "Enregistrer une nouvelle solution IT",
+      "url": "/fixvault/?action=add",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
