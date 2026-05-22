@@ -146,7 +146,7 @@ function buildCard(sol, index) {
    COMPTEURS CATÉGORIES
 ══════════════════════════════════════════════ */
 function updateCategoryCounts() {
-  const categories = ['Windows', 'Network', 'Printers', 'Security', 'Scripts', 'Linux'];
+  const categories = ['Windows', 'Network', 'Printers', 'Security', 'Scripts', 'Linux', 'Video Sureveillance'];
   const total = window.allSolutions.length;
 
   document.getElementById('count-all').textContent = total;
