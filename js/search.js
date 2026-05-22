@@ -131,6 +131,7 @@ const Search = (() => {
       Security: '#ff4d6d',
       Scripts:  '#b57bff',
       Linux:    '#ff8c42',
+      Video Sureveillance:    '#ff8c42',
     };
     return map[cat] || '#8891a8';
   }
