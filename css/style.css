@@ -820,7 +820,9 @@ option { background: var(--bg-raised); }
 }
 
 /* ── Category color mapping ─────────────────────────────────── */
-.cat-windows  { --cat-color: var(--cat-windows); }
+/* Ajouter dans la section Category color mapping */
+.cat-windows,
+.cat-video-surveillance { --cat-color: var(--cat-windows); }
 .cat-network  { --cat-color: var(--cat-network); }
 .cat-printers { --cat-color: var(--cat-printers); }
 .cat-security { --cat-color: var(--cat-security); }
@@ -855,4 +857,299 @@ option { background: var(--bg-raised); }
   .form-grid { grid-template-columns: 1fr; }
   .modal-detail, .modal-form, .modal-howto { padding: 20px; }
   .topbar-right .btn-ghost span { display: none; }
+}
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD MODAL
+   ═══════════════════════════════════════════════════════════════ */
+.modal-dashboard {
+  max-width: 800px;
+  padding: 32px;
+}
+
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  text-align: center;
+}
+
+.stat-card .stat-value {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.stat-card .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.dashboard-section {
+  margin-bottom: 32px;
+}
+
+.dashboard-section h3 {
+  font-size: 1rem;
+  font-family: var(--font-mono);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.top-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.top-name {
+  width: 100px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.top-bar-container {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.top-bar {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+}
+
+.top-count {
+  width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.tags-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-md);
+}
+
+.tag-stat {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--bg-surface);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+  cursor: pointer;
+}
+
+.tag-stat:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.recent-title {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.recent-cat {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+}
+
+.recent-date {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 20px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-md);
+  min-height: 200px;
+}
+
+.chart-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-bar-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.chart-bar-container {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.chart-bar {
+  width: 100%;
+  min-height: 4px;
+  transition: height 0.3s ease;
+}
+
+.chart-bar-value {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GESTION CATÉGORIES
+   ═══════════════════════════════════════════════════════════════ */
+.modal-categories {
+  max-width: 600px;
+  padding: 32px;
+}
+
+.categories-list {
+  margin-bottom: 24px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.category-manage-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+}
+
+.category-manage-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.category-icon {
+  font-size: 1.2rem;
+  width: 28px;
+  text-align: center;
+}
+
+.category-label {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.category-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.category-manage-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.category-manage-actions button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+}
+
+.category-manage-actions button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.add-category-form {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.add-category-form h3 {
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE DASHBOARD
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .chart-bars {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .chart-bar-item {
+    flex-direction: row;
+  }
+  
+  .chart-bar-container {
+    height: 30px;
+    width: 100%;
+  }
+  
+  .chart-bar {
+    height: 100%;
+    width: auto;
+  }
 }

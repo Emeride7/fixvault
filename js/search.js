@@ -7,11 +7,6 @@
 
 const Search = (() => {
 
-  /**
-   * Recherche dans une solution.
-   * Retourne true si le terme est trouvé dans :
-   * title, problem, solution, tags[], category
-   */
   function matchesTerm(sol, term) {
     const t = term.toLowerCase().trim();
     if (!t) return true;
@@ -25,13 +20,6 @@ const Search = (() => {
     );
   }
 
-  /**
-   * Filtre le tableau de solutions par terme ET catégorie.
-   * @param {Array}  solutions  - tableau complet
-   * @param {string} term       - texte libre
-   * @param {string} category   - catégorie sélectionnée ('all' = aucun filtre)
-   * @returns {Array}
-   */
   function filter(solutions, term, category) {
     return solutions.filter(sol => {
       const catOk  = category === 'all' || sol.category === category;
@@ -40,13 +28,6 @@ const Search = (() => {
     });
   }
 
-  /**
-   * Génère des suggestions pour le dropdown de la barre de recherche.
-   * Limite à 6 résultats pour ne pas surcharger l'UI.
-   * @param {Array}  solutions
-   * @param {string} term
-   * @returns {Array}
-   */
   function getSuggestions(solutions, term) {
     if (!term || term.length < 2) return [];
     const t = term.toLowerCase();
@@ -61,9 +42,6 @@ const Search = (() => {
       }));
   }
 
-  /**
-   * Retourne un court extrait montrant où le terme a été trouvé.
-   */
   function getMatchSnippet(sol, term) {
     if (sol.title?.toLowerCase().includes(term))    return 'titre';
     if (sol.problem?.toLowerCase().includes(term))  return 'problème';
@@ -73,9 +51,6 @@ const Search = (() => {
     return '';
   }
 
-  /**
-   * Surligne un terme dans un texte (retourne du HTML sécurisé).
-   */
   function highlight(text, term) {
     if (!term) return escapeHtml(text);
     const escaped = escapeHtml(text);
@@ -90,9 +65,10 @@ const Search = (() => {
     return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  /* ── Rendu du dropdown de suggestions ── */
   function renderSuggestions(suggestions, term, onSelect) {
     const el = document.getElementById('searchSuggestions');
+    if (!el) return;
+    
     if (!suggestions.length) {
       el.classList.add('hidden');
       return;
@@ -119,10 +95,10 @@ const Search = (() => {
   }
 
   function hideSuggestions() {
-    document.getElementById('searchSuggestions').classList.add('hidden');
+    const el = document.getElementById('searchSuggestions');
+    if (el) el.classList.add('hidden');
   }
 
-  /* ── Couleurs catégories ── */
   function getCatColor(cat) {
     const map = {
       Windows:  '#4d94ff',
@@ -131,7 +107,7 @@ const Search = (() => {
       Security: '#ff4d6d',
       Scripts:  '#b57bff',
       Linux:    '#ff8c42',
-      Video Sureveillance:    '#ff8c42',
+      'Video Surveillance': '#ff8c42',
     };
     return map[cat] || '#8891a8';
   }

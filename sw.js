@@ -13,15 +13,15 @@ const CACHE_ASSETS  = [
   './js/app.js',
   './js/search.js',
   './js/modal.js',
+  './js/auth.js',
   './js/supabaseClient.js',
   './manifest.json',
-  // Polices Google
+  './icons/icon-192.png',
+  './icons/icon-512.png',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap',
-  // SDK Supabase
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
 ];
 
-/* ── Installation : mise en cache des assets ── */
 self.addEventListener('install', event => {
   console.log('[SW] Installation…');
   event.waitUntil(
@@ -33,7 +33,6 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-/* ── Activation : suppression des anciens caches ── */
 self.addEventListener('activate', event => {
   console.log('[SW] Activation…');
   event.waitUntil(
@@ -51,21 +50,17 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-/* ── Interception des requêtes ── */
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Requêtes Supabase → Network-first (données fraîches)
   if (url.hostname.includes('supabase.co')) {
     event.respondWith(networkFirst(event.request));
     return;
   }
 
-  // Tout le reste → Cache-first (assets statiques)
   event.respondWith(cacheFirst(event.request));
 });
 
-/* ── Stratégie Cache-first ── */
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -78,7 +73,6 @@ async function cacheFirst(request) {
     }
     return response;
   } catch {
-    // Hors ligne et pas en cache → page offline basique
     return new Response(
       '<h1 style="font-family:monospace;color:#00e5a0;padding:2rem">FixVault – Mode hors ligne</h1><p style="font-family:monospace;padding:0 2rem;color:#8891a8">Reconnectez-vous pour synchroniser les données.</p>',
       { headers: { 'Content-Type': 'text/html' } }
@@ -86,7 +80,6 @@ async function cacheFirst(request) {
   }
 }
 
-/* ── Stratégie Network-first ── */
 async function networkFirst(request) {
   try {
     const response = await fetch(request);

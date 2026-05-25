@@ -1,36 +1,31 @@
 /**
  * FixVault – app.js
- * ─────────────────────────────────────────────
- * Logique principale :
- *  - Chargement des solutions depuis Supabase
- *  - Rendu des cartes
- *  - Filtres par catégorie
- *  - Connexion entre Search, Modal et Supabase
- *  - CRUD complet (Create, Read, Update, Delete)
+ * Logique principale
  */
 
 /* ══════════════════════════════════════════════
    ÉTAT GLOBAL
 ══════════════════════════════════════════════ */
-window.allSolutions    = [];   // toutes les solutions en mémoire
+window.allSolutions    = [];
 let currentCategory    = 'all';
 let currentSearchTerm  = '';
 let debounceTimer      = null;
 
 /* ══════════════════════════════════════════════
-   POINT D'ENTRÉE (appelé par supabaseClient.js)
+   POINT D'ENTRÉE
 ══════════════════════════════════════════════ */
 window.initApp = async function () {
   console.log('[FixVault] Initialisation de l\'application…');
 
-  // Initialiser la session admin (si déjà connecté)
   await Auth.init();
-
-  // Charger les données
+  await CategoriesManager.init();
   await loadSolutions();
-
-  // Brancher les événements UI
   bindEvents();
+  renderSidebar();
+  updateCategorySelect();
+  
+  // Déclencher l'événement pour les raccourcis
+  window.dispatchEvent(new Event('appReady'));
 };
 
 /* ══════════════════════════════════════════════
@@ -60,26 +55,69 @@ async function loadSolutions() {
 }
 
 /* ══════════════════════════════════════════════
+   RENDU SIDEBAR
+══════════════════════════════════════════════ */
+function renderSidebar() {
+  const container = document.getElementById('categoryList');
+  if (!container) return;
+  
+  const categoriesHtml = CategoriesManager.getSidebarHtml();
+  container.innerHTML = `
+    <li class="category-item active" data-cat="all">
+      <span class="cat-icon">▦</span>
+      <span>Toutes</span>
+      <span class="cat-count" id="count-all">0</span>
+    </li>
+    ${categoriesHtml}
+  `;
+  
+  updateCategoryCounts();
+  rebindCategoryEvents();
+}
+
+function rebindCategoryEvents() {
+  const categoryList = document.getElementById('categoryList');
+  if (!categoryList) return;
+
+  categoryList.querySelectorAll('.category-item').forEach(item => {
+    item.removeEventListener('click', handleCategoryClick);
+    item.addEventListener('click', handleCategoryClick);
+  });
+}
+
+function handleCategoryClick(e) {
+  const item = e.target.closest('.category-item');
+  if (!item) return;
+
+  document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
+  item.classList.add('active');
+  
+  const catValue = item.dataset.cat;
+  currentCategory = catValue === 'all' ? 'all' : catValue;
+  renderFilteredSolutions();
+}
+
+/* ══════════════════════════════════════════════
    RENDU
 ══════════════════════════════════════════════ */
-
-/** Filtre et affiche les solutions selon l'état courant */
 function renderFilteredSolutions() {
   const results = Search.filter(window.allSolutions, currentSearchTerm, currentCategory);
   renderSolutions(results);
 
-  // Mettre à jour les stats
   document.getElementById('statTotal').textContent    = window.allSolutions.length;
   document.getElementById('statFiltered').textContent = results.length;
 
-  // Titre de la zone principale
   const titleEl = document.getElementById('contentTitle');
   const metaEl  = document.getElementById('contentMeta');
-  titleEl.textContent = currentCategory === 'all' ? 'Toutes les solutions' : currentCategory;
+  
+  if (currentCategory === 'all') {
+    titleEl.textContent = 'Toutes les solutions';
+  } else {
+    titleEl.textContent = currentCategory;
+  }
   metaEl.textContent  = `${results.length} solution${results.length > 1 ? 's' : ''}`;
 }
 
-/** Rend les cartes dans la grille */
 function renderSolutions(solutions) {
   const grid  = document.getElementById('solutionsGrid');
   const empty = document.getElementById('emptyState');
@@ -94,7 +132,6 @@ function renderSolutions(solutions) {
 
   grid.innerHTML = solutions.map((sol, i) => buildCard(sol, i)).join('');
 
-  // Événements sur les cartes
   grid.querySelectorAll('.solution-card').forEach(card => {
     card.addEventListener('click', () => {
       const sol = window.allSolutions.find(s => s.id === card.dataset.id);
@@ -103,39 +140,37 @@ function renderSolutions(solutions) {
   });
 }
 
-/** Construit le HTML d'une carte */
 function buildCard(sol, index) {
-  const catClass = `cat-${sol.category?.toLowerCase() || 'default'}`;
-  const catColor = Search.getCatColor(sol.category);
+  const catColor = CategoriesManager.getColor(sol.category);
   const date     = sol.created_at
     ? new Date(sol.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
     : '';
 
   const tags = (sol.tags || []).slice(0, 4).map(t => {
     const isMatch = currentSearchTerm && t.toLowerCase().includes(currentSearchTerm.toLowerCase());
-    return `<span class="tag ${isMatch ? 'tag-highlight' : ''}">${escHtml(t)}</span>`;
+    return `<span class="tag ${isMatch ? 'tag-highlight' : ''}">${escapeHtml(t)}</span>`;
   }).join('');
 
   const firstCmd = (sol.commands || []).find(Boolean);
   const cmdPreview = firstCmd
-    ? `<div class="card-cmd-preview">> ${escHtml(firstCmd)}</div>`
+    ? `<div class="card-cmd-preview">> ${escapeHtml(firstCmd)}</div>`
     : '';
 
   return `
     <article
-      class="solution-card ${catClass}"
+      class="solution-card"
       data-id="${sol.id}"
       style="--cat-color: ${catColor}; animation-delay: ${index * 30}ms"
       role="button"
       tabindex="0"
-      aria-label="Voir la solution : ${escHtml(sol.title)}"
+      aria-label="Voir la solution : ${escapeHtml(sol.title)}"
     >
       <div class="card-top">
-        <span class="card-category">${escHtml(sol.category)}</span>
+        <span class="card-category">${escapeHtml(sol.category)}</span>
         <span class="card-date">${date}</span>
       </div>
-      <h3 class="card-title">${escHtml(sol.title)}</h3>
-      <p class="card-problem">${escHtml(sol.problem)}</p>
+      <h3 class="card-title">${escapeHtml(sol.title)}</h3>
+      <p class="card-problem">${escapeHtml(sol.problem)}</p>
       ${cmdPreview}
       <div class="card-tags">${tags}</div>
     </article>
@@ -146,28 +181,32 @@ function buildCard(sol, index) {
    COMPTEURS CATÉGORIES
 ══════════════════════════════════════════════ */
 function updateCategoryCounts() {
-  const categories = ['Windows', 'Network', 'Printers', 'Security', 'Scripts', 'Linux', 'Video Sureveillance'];
   const total = window.allSolutions.length;
+  const countAll = document.getElementById('count-all');
+  if (countAll) countAll.textContent = total;
 
-  document.getElementById('count-all').textContent = total;
-
+  const categories = CategoriesManager.getAll();
   categories.forEach(cat => {
-    const count = window.allSolutions.filter(s => s.category === cat).length;
-    const el = document.getElementById(`count-${cat}`);
+    const count = window.allSolutions.filter(s => s.category === cat.label).length;
+    const el = document.getElementById(`count-${cat.label.replace(/\s/g, '-').toLowerCase()}`);
     if (el) el.textContent = count;
   });
 }
 
-/* ══════════════════════════════════════════════
-   CRUD – OPÉRATIONS SUPABASE
-══════════════════════════════════════════════ */
+function updateCategorySelect() {
+  const select = document.getElementById('fCategory');
+  if (select) {
+    select.innerHTML = '<option value="">— Choisir —</option>' + CategoriesManager.getOptionsHtml();
+  }
+}
 
-/** Ajoute ou met à jour une solution */
+/* ══════════════════════════════════════════════
+   CRUD
+══════════════════════════════════════════════ */
 async function saveSolution(data, editId = null) {
   let result;
 
   if (editId) {
-    // Mise à jour
     result = await window.supabaseClient
       .from('solutions')
       .update(data)
@@ -175,7 +214,6 @@ async function saveSolution(data, editId = null) {
       .select()
       .single();
   } else {
-    // Insertion
     result = await window.supabaseClient
       .from('solutions')
       .insert([data])
@@ -191,7 +229,6 @@ async function saveSolution(data, editId = null) {
     return;
   }
 
-  // Mettre à jour le tableau local sans rechargement complet
   if (editId) {
     const idx = window.allSolutions.findIndex(s => s.id === editId);
     if (idx !== -1) window.allSolutions[idx] = saved;
@@ -205,7 +242,6 @@ async function saveSolution(data, editId = null) {
   renderFilteredSolutions();
 }
 
-/** Supprime une solution */
 async function deleteSolution(id) {
   const confirmed = window.confirm('Supprimer cette solution ? Cette action est irréversible.');
   if (!confirmed) return;
@@ -229,9 +265,8 @@ async function deleteSolution(id) {
 }
 
 /* ══════════════════════════════════════════════
-   OUVERTURE DES MODALES
+   MODALES
 ══════════════════════════════════════════════ */
-
 function openSolutionDetail(sol) {
   Modal.openDetail(
     sol,
@@ -241,52 +276,178 @@ function openSolutionDetail(sol) {
 }
 
 /* ══════════════════════════════════════════════
+   GESTION CATÉGORIES (ADMIN)
+══════════════════════════════════════════════ */
+async function openCategoriesManager() {
+  if (!Auth.isAdmin()) {
+    Toast.show('Accès réservé aux administrateurs', 'error');
+    return;
+  }
+  
+  const modal = document.getElementById('categoriesModal');
+  if (!modal) return;
+  
+  await CategoriesManager.load();
+  
+  const listContainer = document.getElementById('categoriesList');
+  CategoriesManager.renderManageList(
+    listContainer,
+    (label) => editCategory(label),
+    async (label) => {
+      if (confirm(`Supprimer la catégorie "${label}" ?`)) {
+        try {
+          await CategoriesManager.remove(label);
+          await loadSolutions();
+          renderSidebar();
+          updateCategorySelect();
+          Toast.show(`Catégorie "${label}" supprimée`, 'success');
+          openCategoriesManager(); // Rafraîchir la modal
+        } catch (err) {
+          Toast.show(err.message, 'error');
+        }
+      }
+    }
+  );
+  
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+async function editCategory(label) {
+  const cat = CategoriesManager.getAll().find(c => c.label === label);
+  if (!cat) return;
+  
+  const newLabel = prompt('Nouveau nom :', cat.label);
+  const newIcon = prompt('Nouvelle icône :', cat.icon);
+  const newColor = prompt('Nouvelle couleur (hex) :', cat.color);
+  
+  if (newLabel || newIcon || newColor) {
+    const updates = {};
+    if (newLabel && newLabel !== cat.label) updates.label = newLabel;
+    if (newIcon && newIcon !== cat.icon) updates.icon = newIcon;
+    if (newColor && newColor !== cat.color) updates.color = newColor;
+    
+    if (Object.keys(updates).length > 0) {
+      try {
+        await CategoriesManager.update(label, updates);
+        await loadSolutions();
+        renderSidebar();
+        updateCategorySelect();
+        Toast.show('Catégorie mise à jour', 'success');
+        openCategoriesManager();
+      } catch (err) {
+        Toast.show(err.message, 'error');
+      }
+    }
+  }
+}
+
+async function addNewCategory() {
+  const label = document.getElementById('newCategoryLabel').value.trim();
+  const icon = document.getElementById('newCategoryIcon').value.trim() || '◈';
+  const color = document.getElementById('newCategoryColor').value;
+  
+  if (!label) {
+    Toast.show('Nom de catégorie requis', 'error');
+    return;
+  }
+  
+  try {
+    await CategoriesManager.add(label, icon, color);
+    await loadSolutions();
+    renderSidebar();
+    updateCategorySelect();
+    
+    document.getElementById('newCategoryLabel').value = '';
+    document.getElementById('newCategoryIcon').value = '◈';
+    document.getElementById('newCategoryColor').value = '#8891a8';
+    
+    Toast.show(`Catégorie "${label}" ajoutée`, 'success');
+    openCategoriesManager(); // Rafraîchir
+  } catch (err) {
+    Toast.show(err.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════
    ÉVÉNEMENTS UI
 ══════════════════════════════════════════════ */
 function bindEvents() {
+  bindAuthEvents();
+  bindSearchEvents();
+  bindCategoryEvents();
+  bindButtonEvents();
+  bindAccessibilityEvents();
+  bindDashboardEvents();
+}
 
-  /* ── Bouton Admin (login / logout) ── */
-  document.getElementById('btnAuthToggle').addEventListener('click', () => {
-    if (Auth.isAdmin()) {
-      Auth.logout();
-    } else {
-      // Ouvrir la modale de login
-      document.getElementById('loginEmail').value    = '';
-      document.getElementById('loginPassword').value = '';
-      document.getElementById('loginModal').classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-      setTimeout(() => document.getElementById('loginEmail').focus(), 100);
-    }
-  });
+function bindAuthEvents() {
+  const authBtn = document.getElementById('btnAuthToggle');
+  if (authBtn) {
+    authBtn.addEventListener('click', () => {
+      if (Auth.isAdmin()) {
+        Auth.logout();
+        document.getElementById('adminCategoriesSection').style.display = 'none';
+      } else {
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('loginModal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => document.getElementById('loginEmail').focus(), 100);
+      }
+    });
+  }
 
-  // Soumettre le login
-  document.getElementById('submitLogin').addEventListener('click', async () => {
-    const email    = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    if (!email || !password) { Toast.show('Email et mot de passe requis.', 'error'); return; }
-    const ok = await Auth.login(email, password);
-    if (ok) {
+  const submitLogin = document.getElementById('submitLogin');
+  if (submitLogin) {
+    submitLogin.addEventListener('click', async () => {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      if (!email || !password) {
+        Toast.show('Email et mot de passe requis.', 'error');
+        return;
+      }
+      const ok = await Auth.login(email, password);
+      if (ok) {
+        document.getElementById('loginModal').classList.add('hidden');
+        document.body.style.overflow = '';
+        document.getElementById('adminCategoriesSection').style.display = 'block';
+      }
+    });
+  }
+
+  const loginPassword = document.getElementById('loginPassword');
+  if (loginPassword) {
+    loginPassword.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('submitLogin').click();
+    });
+  }
+
+  const cancelLogin = document.getElementById('cancelLogin');
+  if (cancelLogin) {
+    cancelLogin.addEventListener('click', () => {
       document.getElementById('loginModal').classList.add('hidden');
       document.body.style.overflow = '';
-    }
-  });
+    });
+  }
 
-  // Enter pour valider le login
-  document.getElementById('loginPassword').addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('submitLogin').click();
-  });
+  const closeLoginModal = document.getElementById('closeLoginModal');
+  if (closeLoginModal) {
+    closeLoginModal.addEventListener('click', () => {
+      document.getElementById('loginModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    });
+  }
+  
+  // Vérifier si admin au chargement
+  if (Auth.isAdmin()) {
+    document.getElementById('adminCategoriesSection').style.display = 'block';
+  }
+}
 
-  document.getElementById('cancelLogin').addEventListener('click', () => {
-    document.getElementById('loginModal').classList.add('hidden');
-    document.body.style.overflow = '';
-  });
-  document.getElementById('closeLoginModal').addEventListener('click', () => {
-    document.getElementById('loginModal').classList.add('hidden');
-    document.body.style.overflow = '';
-  });
-
-  /* ── Barre de recherche ── */
+function bindSearchEvents() {
   const searchInput = document.getElementById('searchInput');
+  if (!searchInput) return;
 
   searchInput.addEventListener('input', () => {
     clearTimeout(debounceTimer);
@@ -294,7 +455,6 @@ function bindEvents() {
       currentSearchTerm = searchInput.value.trim();
       renderFilteredSolutions();
 
-      // Suggestions
       const suggestions = Search.getSuggestions(window.allSolutions, currentSearchTerm);
       Search.renderSuggestions(suggestions, currentSearchTerm, (id) => {
         const sol = window.allSolutions.find(s => s.id === id);
@@ -308,12 +468,10 @@ function bindEvents() {
     }, 180);
   });
 
-  // Masquer les suggestions en cliquant ailleurs
   document.addEventListener('click', e => {
     if (!e.target.closest('.search-wrapper')) Search.hideSuggestions();
   });
 
-  // Raccourci Ctrl+K / Cmd+K pour focus recherche
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
@@ -321,136 +479,106 @@ function bindEvents() {
       searchInput.select();
     }
   });
+}
 
-  /* ── Filtres catégories ── */
-  document.getElementById('categoryList').addEventListener('click', e => {
-    const item = e.target.closest('.category-item');
-    if (!item) return;
-
-    document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
-    item.classList.add('active');
-    currentCategory = item.dataset.cat;
-    renderFilteredSolutions();
-  });
-
-  /* ── Bouton Ajouter solution ── */
-  document.getElementById('btnAddSolution').addEventListener('click', () => {
-    Modal.openAdd(saveSolution);
-  });
-
-  // Depuis l'état vide
-  document.getElementById('btnAddFromEmpty').addEventListener('click', () => {
-    Modal.openAdd(saveSolution);
-  });
-
-  /* ── Bouton Comment ça marche ── */
-  document.getElementById('btnHowTo').addEventListener('click', () => {
-    Modal.openHowTo();
-  });
-
-  /* ── Accessibilité : Enter sur les cartes ── */
-  document.getElementById('solutionsGrid').addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      const card = e.target.closest('.solution-card');
-      if (card) card.click();
-    }
+function bindCategoryEvents() {
+  const categoryList = document.getElementById('categoryList');
+  if (!categoryList) return;
+  
+  categoryList.querySelectorAll('.category-item').forEach(item => {
+    item.addEventListener('click', handleCategoryClick);
   });
 }
 
+function bindButtonEvents() {
+  const addBtn = document.getElementById('btnAddSolution');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      Modal.openAdd(saveSolution);
+    });
+  }
+
+  const addFromEmpty = document.getElementById('btnAddFromEmpty');
+  if (addFromEmpty) {
+    addFromEmpty.addEventListener('click', () => {
+      Modal.openAdd(saveSolution);
+    });
+  }
+
+  const howToBtn = document.getElementById('btnHowTo');
+  if (howToBtn) {
+    howToBtn.addEventListener('click', () => {
+      Modal.openHowTo();
+    });
+  }
+  
+  const manageCategoriesBtn = document.getElementById('btnManageCategories');
+  if (manageCategoriesBtn) {
+    manageCategoriesBtn.addEventListener('click', openCategoriesManager);
+  }
+  
+  const addCategoryBtn = document.getElementById('btnAddCategory');
+  if (addCategoryBtn) {
+    addCategoryBtn.addEventListener('click', addNewCategory);
+  }
+  
+  const closeCategoriesBtn = document.getElementById('closeCategoriesBtn');
+  if (closeCategoriesBtn) {
+    closeCategoriesBtn.addEventListener('click', () => {
+      document.getElementById('categoriesModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    });
+  }
+  
+  const closeCategoriesModal = document.getElementById('closeCategoriesModal');
+  if (closeCategoriesModal) {
+    closeCategoriesModal.addEventListener('click', () => {
+      document.getElementById('categoriesModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    });
+  }
+}
+
+function bindDashboardEvents() {
+  const dashboardBtn = document.getElementById('btnDashboard');
+  if (dashboardBtn) {
+    dashboardBtn.addEventListener('click', () => {
+      if (window.allSolutions.length === 0) {
+        Toast.show('Aucune solution à analyser', 'info');
+        return;
+      }
+      Dashboard.open(window.allSolutions);
+    });
+  }
+  
+  const closeDashboardBtn = document.getElementById('closeDashboardModal');
+  if (closeDashboardBtn) {
+    closeDashboardBtn.addEventListener('click', () => Dashboard.close());
+  }
+}
+
+function bindAccessibilityEvents() {
+  const grid = document.getElementById('solutionsGrid');
+  if (grid) {
+    grid.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const card = e.target.closest('.solution-card');
+        if (card) card.click();
+      }
+    });
+  }
+}
+
 /* ══════════════════════════════════════════════
-   ÉTAT CHARGEMENT
+   UTILITAIRES
 ══════════════════════════════════════════════ */
 function showLoading(show) {
-  document.getElementById('loadingState').classList.toggle('hidden', !show);
-  document.getElementById('solutionsGrid').classList.toggle('hidden', show);
+  const loadingEl = document.getElementById('loadingState');
+  const gridEl = document.getElementById('solutionsGrid');
+  if (loadingEl) loadingEl.classList.toggle('hidden', !show);
+  if (gridEl) gridEl.classList.toggle('hidden', show);
 }
 
-/* ══════════════════════════════════════════════
-   UTILITAIRE HTML
-══════════════════════════════════════════════ */
-function escHtml(str) {
+function escapeHtml(str) {
   return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
-/* ══════════════════════════════════════════════
-   DONNÉES DE DÉMONSTRATION
-   (insérées automatiquement si la table est vide)
-══════════════════════════════════════════════ */
-window.seedDemoData = async function () {
-  const demos = [
-    {
-      title: 'Vider le cache DNS Windows',
-      category: 'Network',
-      problem: 'Le DNS ne se résout pas correctement, certains sites ne s\'ouvrent pas ou pointent vers de vieilles adresses IP.',
-      solution: 'Vider le cache DNS local de Windows force une résolution DNS fraîche. Ouvrir une invite de commande en administrateur et exécuter les commandes suivantes.',
-      commands: ['ipconfig /flushdns', 'ipconfig /registerdns', 'netsh winsock reset'],
-      tags: ['dns', 'réseau', 'flush', 'windows', 'cache'],
-    },
-    {
-      title: 'Réinitialiser le spouleur d\'impression',
-      category: 'Printers',
-      problem: 'L\'imprimante n\'imprime plus, la file d\'attente est bloquée et les travaux restent en statut "Suppression en cours".',
-      solution: 'Arrêter le service Spouleur, vider le répertoire des travaux en attente, puis redémarrer le service.',
-      commands: ['net stop spooler', 'del /Q /F /S "%systemroot%\\System32\\spool\\PRINTERS\\*.*"', 'net start spooler'],
-      tags: ['spouleur', 'impression', 'file d\'attente', 'windows', 'printer'],
-    },
-    {
-      title: 'Forcer la mise à jour des stratégies de groupe',
-      category: 'Windows',
-      problem: 'Les GPO ne s\'appliquent pas sur le poste. L\'utilisateur n\'a pas les droits ou les logiciels attendus.',
-      solution: 'Forcer une mise à jour des stratégies de groupe pour appliquer immédiatement les nouvelles GPO sans redémarrer.',
-      commands: ['gpupdate /force', 'gpresult /r'],
-      tags: ['gpo', 'group policy', 'active directory', 'windows', 'admin'],
-    },
-    {
-      title: 'Analyser les ports ouverts avec netstat',
-      category: 'Security',
-      problem: 'Identifier les connexions réseau actives et les ports ouverts pour détecter une activité suspecte.',
-      solution: 'Utiliser netstat pour lister toutes les connexions TCP/UDP actives avec le PID des processus associés.',
-      commands: ['netstat -ano', 'netstat -b -n', 'tasklist /fi "pid eq [PID]"'],
-      tags: ['sécurité', 'ports', 'netstat', 'connexions', 'audit'],
-    },
-    {
-      title: 'Vérifier et réparer les fichiers système Windows',
-      category: 'Windows',
-      problem: 'Windows se comporte de manière instable, des erreurs système apparaissent, certains programmes ne se lancent pas.',
-      solution: 'Lancer SFC (System File Checker) pour scanner et réparer automatiquement les fichiers système corrompus. Si SFC échoue, utiliser DISM.',
-      commands: ['sfc /scannow', 'DISM /Online /Cleanup-Image /RestoreHealth', 'sfc /scannow'],
-      tags: ['sfc', 'dism', 'réparation', 'fichiers système', 'windows'],
-    },
-    {
-      title: 'Script Bash – Sauvegarde automatique',
-      category: 'Scripts',
-      problem: 'Besoin d\'automatiser la sauvegarde quotidienne d\'un répertoire vers un serveur NFS/SSH sans intervention manuelle.',
-      solution: 'Script bash utilisant rsync pour une synchronisation incrémentale. À planifier via cron. Crée un log daté à chaque exécution.',
-      commands: [
-        'rsync -avz --delete /source/ user@server:/backup/',
-        'chmod +x backup.sh',
-        'crontab -e  # Ajouter: 0 2 * * * /opt/scripts/backup.sh',
-      ],
-      tags: ['bash', 'rsync', 'backup', 'cron', 'linux', 'automatisation'],
-    },
-    {
-      title: 'Libérer de l\'espace disque sous Linux',
-      category: 'Linux',
-      problem: 'Le disque est plein, le système ralentit ou des services s\'arrêtent faute d\'espace disque disponible.',
-      solution: 'Identifier les répertoires les plus volumineux, purger les anciens kernels, nettoyer le cache APT et les journaux systemd.',
-      commands: [
-        'df -h',
-        'du -sh /* 2>/dev/null | sort -rh | head -20',
-        'apt autoremove && apt clean',
-        'journalctl --vacuum-time=7d',
-      ],
-      tags: ['linux', 'disque', 'espace', 'nettoyage', 'apt', 'journalctl'],
-    },
-  ];
-
-  const { error } = await window.supabaseClient.from('solutions').insert(demos);
-  if (error) {
-    console.error('[FixVault] Erreur seed :', error);
-    Toast.show('Erreur lors de l\'insertion des données de démo.', 'error');
-  } else {
-    Toast.show('Données de démonstration insérées ✓', 'success');
-    await loadSolutions();
-  }
-};

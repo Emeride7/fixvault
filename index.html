@@ -42,13 +42,15 @@
           autocomplete="off"
         />
         <kbd class="search-kbd">⌘K</kbd>
-        <!-- Suggestions dropdown -->
         <div id="searchSuggestions" class="search-suggestions hidden"></div>
       </div>
     </div>
 
     <div class="topbar-right">
       <span id="adminBadge" class="admin-badge hidden">⚿ Admin</span>
+      <button id="btnDashboard" class="btn btn-ghost">
+        <span>📊</span> Dashboard
+      </button>
       <button id="btnHowTo" class="btn btn-ghost">
         <span>?</span> Comment ça marche
       </button>
@@ -76,37 +78,15 @@
             <span>Toutes</span>
             <span class="cat-count" id="count-all">0</span>
           </li>
-          <li class="category-item" data-cat="Windows">
-            <span class="cat-icon">⊞</span>
-            <span>Windows</span>
-            <span class="cat-count" id="count-Windows">0</span>
-          </li>
-          <li class="category-item" data-cat="Network">
-            <span class="cat-icon">⋈</span>
-            <span>Network</span>
-            <span class="cat-count" id="count-Network">0</span>
-          </li>
-          <li class="category-item" data-cat="Printers">
-            <span class="cat-icon">▤</span>
-            <span>Printers</span>
-            <span class="cat-count" id="count-Printers">0</span>
-          </li>
-          <li class="category-item" data-cat="Security">
-            <span class="cat-icon">⊕</span>
-            <span>Security</span>
-            <span class="cat-count" id="count-Security">0</span>
-          </li>
-          <li class="category-item" data-cat="Scripts">
-            <span class="cat-icon">≫</span>
-            <span>Scripts</span>
-            <span class="cat-count" id="count-Scripts">0</span>
-          </li>
-          <li class="category-item" data-cat="Linux">
-            <span class="cat-icon">◈</span>
-            <span>Linux</span>
-            <span class="cat-count" id="count-Linux">0</span>
-          </li>
         </ul>
+      </div>
+
+      <!-- Gestion des catégories (visible uniquement pour admin) -->
+      <div class="sidebar-section" id="adminCategoriesSection" style="display:none;">
+        <p class="sidebar-label">Administration</p>
+        <button id="btnManageCategories" class="btn btn-ghost btn-sm" style="width:100%;">
+          ⚙ Gérer les catégories
+        </button>
       </div>
 
       <div class="sidebar-section sidebar-stats">
@@ -125,26 +105,22 @@
     <!-- MAIN CONTENT -->
     <main class="main-content">
 
-      <!-- Results header -->
       <div class="content-header">
         <h1 class="content-title" id="contentTitle">Toutes les solutions</h1>
         <span class="content-meta" id="contentMeta">Chargement…</span>
       </div>
 
-      <!-- Loading state -->
       <div id="loadingState" class="state-view">
         <div class="spinner"></div>
         <p>Connexion à la base de données…</p>
       </div>
 
-      <!-- Empty state -->
       <div id="emptyState" class="state-view hidden">
         <span class="state-icon">◎</span>
         <p>Aucune solution trouvée</p>
         <button class="btn btn-ghost" id="btnAddFromEmpty">Ajouter la première solution</button>
       </div>
 
-      <!-- Solutions grid -->
       <div class="solutions-grid" id="solutionsGrid"></div>
 
     </main>
@@ -204,13 +180,6 @@
           <label class="form-label">Catégorie *</label>
           <select id="fCategory" class="form-input form-select">
             <option value="">— Choisir —</option>
-            <option value="Windows">Windows</option>
-            <option value="Network">Network</option>
-            <option value="Printers">Printers</option>
-            <option value="Security">Security</option>
-            <option value="Scripts">Scripts</option>
-            <option value="Linux">Linux</option>
-            <option value="Video Sureveillance">Video Sureveillance</option>
           </select>
         </div>
 
@@ -245,6 +214,88 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
+       MODAL : GESTION DES CATÉGORIES
+  ════════════════════════════════════════════ -->
+  <div id="categoriesModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-categories">
+      <button class="modal-close" id="closeCategoriesModal">✕</button>
+      <h2>Gérer les catégories</h2>
+      
+      <div class="categories-list" id="categoriesList"></div>
+      
+      <div class="add-category-form">
+        <h3>Ajouter une catégorie</h3>
+        <div class="form-group">
+          <label class="form-label">Nom</label>
+          <input type="text" id="newCategoryLabel" class="form-input" placeholder="Ex: Database" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Icône (unicode ou emoji)</label>
+          <input type="text" id="newCategoryIcon" class="form-input" value="◈" placeholder="◈" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Couleur</label>
+          <input type="color" id="newCategoryColor" class="form-input" value="#8891a8" style="height:40px;" />
+        </div>
+        <button id="btnAddCategory" class="btn btn-primary">➕ Ajouter</button>
+      </div>
+      
+      <div class="form-actions" style="margin-top:20px;">
+        <button class="btn btn-ghost" id="closeCategoriesBtn">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL : DASHBOARD STATISTIQUES
+  ════════════════════════════════════════════ -->
+  <div id="dashboardModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box modal-dashboard">
+      <button class="modal-close" id="closeDashboardModal">✕</button>
+      <h2>📊 Dashboard FixVault</h2>
+      
+      <div class="dashboard-stats-grid" id="dashboardStats">
+        <div class="stat-card">
+          <div class="stat-value" id="dashTotal">0</div>
+          <div class="stat-label">Solutions totales</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="dashCategories">0</div>
+          <div class="stat-label">Catégories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="dashTags">0</div>
+          <div class="stat-label">Tags uniques</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="dashCommands">0</div>
+          <div class="stat-label">Commandes</div>
+        </div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>🏆 Top catégories</h3>
+        <div id="topCategories" class="top-list"></div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>🏷️ Tags les plus utilisés</h3>
+        <div id="topTags" class="tags-cloud"></div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>📅 Activité récente</h3>
+        <div id="recentActivity" class="recent-list"></div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>📈 Évolution par mois</h3>
+        <div id="monthlyChart" class="chart-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
        MODAL : COMMENT ÇA MARCHE ?
   ════════════════════════════════════════════ -->
   <div id="howToModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
@@ -268,7 +319,7 @@
           <span class="step-num">02</span>
           <div class="step-content">
             <strong>Filtrer par catégorie</strong>
-            <p>Cliquez sur une catégorie dans la colonne gauche (Windows, Network, Linux…) pour afficher uniquement les solutions correspondantes.</p>
+            <p>Cliquez sur une catégorie dans la colonne gauche pour afficher uniquement les solutions correspondantes.</p>
           </div>
         </div>
         <div class="howto-step">
@@ -327,17 +378,16 @@
     </div>
   </div>
 
-  <!-- Toast notification -->
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Scripts -->
   <script src="js/supabaseClient.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/search.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/dashboard.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/app.js"></script>
 
-  <!-- ── Enregistrement du Service Worker (PWA) ── -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -347,7 +397,6 @@
       });
     }
 
-    // Gérer le raccourci ?action=add depuis le manifest shortcut
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'add') {
       window.addEventListener('appReady', () => Modal.openAdd(saveSolution));
