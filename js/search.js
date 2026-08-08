@@ -1,14 +1,31 @@
 /**
  * FixVault – search.js
  * ─────────────────────────────────────────────
- * Recherche instantanée côté client + suggestions.
- * Fonctionne sur le tableau en mémoire `window.allSolutions`.
+ * Recherche instantanée côté client + suggestions + syntaxe avancée.
  */
 
 const Search = (() => {
 
-  function matchesTerm(sol, term) {
-    const t = term.toLowerCase().trim();
+  function parseQuery(raw) {
+    const term = raw.toLowerCase().trim();
+    const filters = { cat: null, tag: null, cmd: null, title: null, problem: null, free: '' };
+    const regex = /\b(cat|tag|cmd|title|problem):([^\s]+)/gi;
+    let m;
+    while ((m = regex.exec(term)) !== null) {
+      filters[m[1].toLowerCase()] = m[2].toLowerCase();
+    }
+    filters.free = term.replace(regex, '').trim();
+    return filters;
+  }
+
+  function matchesTerm(sol, filters) {
+    if (filters.cat && sol.category?.toLowerCase() !== filters.cat) return false;
+    if (filters.tag && !(sol.tags || []).some(t => t.toLowerCase().includes(filters.tag))) return false;
+    if (filters.cmd && !(sol.commands || []).some(c => c.toLowerCase().includes(filters.cmd))) return false;
+    if (filters.title && !sol.title?.toLowerCase().includes(filters.title)) return false;
+    if (filters.problem && !sol.problem?.toLowerCase().includes(filters.problem)) return false;
+
+    const t = filters.free;
     if (!t) return true;
     return (
       sol.title?.toLowerCase().includes(t) ||
@@ -20,31 +37,33 @@ const Search = (() => {
     );
   }
 
-  function filter(solutions, term, category) {
+  function filter(solutions, rawTerm, category) {
+    const filters = parseQuery(rawTerm);
     return solutions.filter(sol => {
-      const catOk  = category === 'all' || sol.category === category;
-      const termOk = matchesTerm(sol, term);
-      return catOk && termOk;
+      const catOk = category === 'all' || sol.category === category;
+      return catOk && matchesTerm(sol, filters);
     });
   }
 
-  function getSuggestions(solutions, term) {
-    if (!term || term.length < 2) return [];
-    const t = term.toLowerCase();
+  function getSuggestions(solutions, rawTerm) {
+    if (!rawTerm || rawTerm.length < 2) return [];
+    const filters = parseQuery(rawTerm);
+    const t = filters.free;
     return solutions
-      .filter(sol => matchesTerm(sol, t))
+      .filter(sol => matchesTerm(sol, filters))
       .slice(0, 6)
       .map(sol => ({
-        id:       sol.id,
-        title:    sol.title,
+        id: sol.id,
+        title: sol.title,
         category: sol.category,
-        match:    getMatchSnippet(sol, t),
+        match: getMatchSnippet(sol, t),
       }));
   }
 
   function getMatchSnippet(sol, term) {
-    if (sol.title?.toLowerCase().includes(term))    return 'titre';
-    if (sol.problem?.toLowerCase().includes(term))  return 'problème';
+    if (!term) return '';
+    if (sol.title?.toLowerCase().includes(term)) return 'titre';
+    if (sol.problem?.toLowerCase().includes(term)) return 'problème';
     if (sol.solution?.toLowerCase().includes(term)) return 'solution';
     if ((sol.tags || []).some(t => t.toLowerCase().includes(term))) return 'tag';
     if ((sol.commands || []).some(c => c.toLowerCase().includes(term))) return 'commande';
@@ -57,30 +76,26 @@ const Search = (() => {
     const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return escaped.replace(
       new RegExp(escapedTerm, 'gi'),
-      match => `<mark class="suggestion-highlight">${match}</mark>`
+      match => `<span class="suggestion-highlight">${match}</span>`
     );
   }
 
   function escapeHtml(str) {
-    return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function renderSuggestions(suggestions, term, onSelect) {
     const el = document.getElementById('searchSuggestions');
     if (!el) return;
-    
     if (!suggestions.length) {
       el.classList.add('hidden');
       return;
     }
-
     el.innerHTML = suggestions.map(s => `
-      <div class="suggestion-item" data-id="${s.id}">
-        <span class="suggestion-cat" style="background:${getCatColor(s.category)}22;color:${getCatColor(s.category)};border:1px solid ${getCatColor(s.category)}44;">
-          ${escapeHtml(s.category)}
-        </span>
+      <div class="suggestion-item" data-id="${escapeHtml(s.id)}">
+        <span class="suggestion-cat" style="background:${Search.getCatColor(s.category)}22;color:${Search.getCatColor(s.category)};border:1px solid ${Search.getCatColor(s.category)}44">${escapeHtml(s.category)}</span>
         <span class="suggestion-title">${highlight(s.title, term)}</span>
-        ${s.match ? `<span class="suggestion-hint">dans ${s.match}</span>` : ''}
+        <span class="suggestion-hint">${s.match ? `dans ${s.match}` : ''}</span>
       </div>
     `).join('');
 
@@ -90,7 +105,6 @@ const Search = (() => {
         el.classList.add('hidden');
       });
     });
-
     el.classList.remove('hidden');
   }
 
@@ -100,17 +114,8 @@ const Search = (() => {
   }
 
   function getCatColor(cat) {
-    const map = {
-      Windows:  '#4d94ff',
-      Network:  '#00e5a0',
-      Printers: '#f5c542',
-      Security: '#ff4d6d',
-      Scripts:  '#b57bff',
-      Linux:    '#ff8c42',
-      'Video Surveillance': '#ff8c42',
-    };
-    return map[cat] || '#8891a8';
+    return CategoriesManager.getColor(cat) || '#8891a8';
   }
 
-  return { filter, getSuggestions, renderSuggestions, hideSuggestions, getCatColor, highlight };
+  return { filter, getSuggestions, renderSuggestions, hideSuggestions, getCatColor, highlight, escapeHtml };
 })();

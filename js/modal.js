@@ -17,12 +17,14 @@ const Modal = (() => {
     const el = document.getElementById(id);
     if (el) {
       el.classList.add('hidden');
-      document.body.style.overflow = '';
+      // Only restore scroll if no other modal is open
+      const anyOpen = document.querySelector('.modal-overlay:not(.hidden)');
+      if (!anyOpen) document.body.style.overflow = '';
     }
   }
 
   function closeAll() {
-    ['detailModal', 'formModal', 'howToModal', 'categoriesModal', 'dashboardModal'].forEach(id => {
+    ['detailModal', 'formModal', 'howToModal', 'categoriesModal', 'dashboardModal', 'loginModal', 'confirmModal'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.add('hidden');
     });
@@ -41,18 +43,30 @@ const Modal = (() => {
 
   const closeDetail = document.getElementById('closeDetailModal');
   if (closeDetail) closeDetail.addEventListener('click', () => close('detailModal'));
-  
+
   const closeForm = document.getElementById('closeFormModal');
   if (closeForm) closeForm.addEventListener('click', () => close('formModal'));
-  
+
   const closeHowTo = document.getElementById('closeHowToModal');
   if (closeHowTo) closeHowTo.addEventListener('click', () => close('howToModal'));
-  
+
+  const closeCategories = document.getElementById('closeCategoriesModal');
+  if (closeCategories) closeCategories.addEventListener('click', () => close('categoriesModal'));
+
+  const closeDashboard = document.getElementById('closeDashboardModal');
+  if (closeDashboard) closeDashboard.addEventListener('click', () => close('dashboardModal'));
+
+  const closeLogin = document.getElementById('closeLoginModal');
+  if (closeLogin) closeLogin.addEventListener('click', () => close('loginModal'));
+
+  const cancelLogin = document.getElementById('cancelLogin');
+  if (cancelLogin) cancelLogin.addEventListener('click', () => close('loginModal'));
+
   const cancelForm = document.getElementById('cancelForm');
   if (cancelForm) cancelForm.addEventListener('click', () => close('formModal'));
 
   /* ═══════════════════════════════════════════
-     MODAL DÉTAIL
+   MODAL DÉTAIL
   ══════════════════════════════════════════════ */
   function openDetail(sol, onEdit, onDelete) {
     const catColor = CategoriesManager.getColor(sol.category);
@@ -60,19 +74,20 @@ const Modal = (() => {
     const catEl = document.getElementById('detailCategory');
     if (catEl) {
       catEl.textContent = sol.category;
-      catEl.style.background = `${catColor}22`;
+      catEl.style.background = catColor + '22';
       catEl.style.color = catColor;
       catEl.style.border = `1px solid ${catColor}44`;
     }
 
     const titleEl = document.getElementById('detailTitle');
     if (titleEl) titleEl.textContent = sol.title;
-    
+
+    // Render markdown
     const problemEl = document.getElementById('detailProblem');
-    if (problemEl) problemEl.textContent = sol.problem;
-    
+    if (problemEl) problemEl.innerHTML = window.marked ? marked.parse(sol.problem || '') : escapeHtml(sol.problem);
+
     const solutionEl = document.getElementById('detailSolution');
-    if (solutionEl) solutionEl.textContent = sol.solution;
+    if (solutionEl) solutionEl.innerHTML = window.marked ? marked.parse(sol.solution || '') : escapeHtml(sol.solution);
 
     const tagsEl = document.getElementById('detailTags');
     if (tagsEl) {
@@ -90,7 +105,7 @@ const Modal = (() => {
         cmdsSection.classList.remove('hidden');
         cmdsEl.innerHTML = commands.map(cmd => `
           <div class="command-row">
-            <span class="command-text">${escapeHtml(cmd)}</span>
+            <code class="command-text">${escapeHtml(cmd)}</code>
             <button class="copy-btn" data-cmd="${escapeHtml(cmd)}">Copy</button>
           </div>
         `).join('');
@@ -112,10 +127,9 @@ const Modal = (() => {
     }
 
     const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
-    
     const editBtn = document.getElementById('btnEditSolution');
     const deleteBtn = document.getElementById('btnDeleteSolution');
-    
+
     if (editBtn) editBtn.style.display = isAdmin ? '' : 'none';
     if (deleteBtn) deleteBtn.style.display = isAdmin ? '' : 'none';
 
@@ -123,62 +137,81 @@ const Modal = (() => {
       editBtn.onclick = () => { close('detailModal'); onEdit(sol); };
     }
     if (deleteBtn) {
-      deleteBtn.onclick = () => onDelete(sol.id);
+      deleteBtn.onclick = () => {
+        close('detailModal');
+        openConfirm(() => onDelete(sol.id));
+      };
     }
 
+    // Favori
+    const favBtn = document.getElementById('btnFavDetail');
+    if (favBtn) {
+      const isFav = Cache.isFavorite(sol.id);
+      favBtn.textContent = isFav ? '★ Retirer' : '☆ Favori';
+      favBtn.style.color = isFav ? 'var(--yellow)' : '';
+      favBtn.onclick = () => {
+        const nowFav = Cache.toggleFavorite(sol.id);
+        favBtn.textContent = nowFav ? '★ Retirer' : '☆ Favori';
+        favBtn.style.color = nowFav ? 'var(--yellow)' : '';
+        if (typeof updateFavCount === 'function') updateFavCount();
+        if (typeof renderFilteredSolutions === 'function') renderFilteredSolutions();
+      };
+    }
+
+    Cache.addHistory(sol.id);
     open('detailModal');
   }
 
   /* ═══════════════════════════════════════════
-     MODAL FORMULAIRE
+   MODAL FORMULAIRE
   ══════════════════════════════════════════════ */
   function openAdd(onSubmit) {
     resetForm();
     updateCategorySelectInModal();
-    
+
     const titleEl = document.getElementById('formModalTitle');
     if (titleEl) titleEl.textContent = 'Nouvelle solution';
-    
+
     const submitLabel = document.getElementById('submitLabel');
     if (submitLabel) submitLabel.textContent = 'Enregistrer';
-    
+
     const submitBtn = document.getElementById('submitForm');
     if (submitBtn) submitBtn.onclick = () => handleSubmit(null, onSubmit);
-    
+
     open('formModal');
   }
 
   function openEdit(sol, onSubmit) {
     resetForm();
     updateCategorySelectInModal();
-    
+
     const titleEl = document.getElementById('formModalTitle');
     if (titleEl) titleEl.textContent = 'Modifier la solution';
-    
+
     const submitLabel = document.getElementById('submitLabel');
     if (submitLabel) submitLabel.textContent = 'Mettre à jour';
 
     const fTitle = document.getElementById('fTitle');
     if (fTitle) fTitle.value = sol.title || '';
-    
+
     const fCategory = document.getElementById('fCategory');
     if (fCategory) fCategory.value = sol.category || '';
-    
+
     const fProblem = document.getElementById('fProblem');
     if (fProblem) fProblem.value = sol.problem || '';
-    
+
     const fSolution = document.getElementById('fSolution');
     if (fSolution) fSolution.value = sol.solution || '';
-    
+
     const fCommands = document.getElementById('fCommands');
     if (fCommands) fCommands.value = (sol.commands || []).join('\n');
-    
+
     const fTags = document.getElementById('fTags');
     if (fTags) fTags.value = (sol.tags || []).join(', ');
 
     const submitBtn = document.getElementById('submitForm');
     if (submitBtn) submitBtn.onclick = () => handleSubmit(sol.id, onSubmit);
-    
+
     open('formModal');
   }
 
@@ -197,10 +230,8 @@ const Modal = (() => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    
     const category = document.getElementById('fCategory');
     if (category) category.value = '';
-    
     document.querySelectorAll('.form-input.error').forEach(el => el.classList.remove('error'));
   }
 
@@ -252,14 +283,36 @@ const Modal = (() => {
   }
 
   /* ═══════════════════════════════════════════
-     MODAL HOW-TO
+   MODAL HOW-TO
   ══════════════════════════════════════════════ */
   function openHowTo() {
     open('howToModal');
   }
 
   /* ═══════════════════════════════════════════
-     COPY TO CLIPBOARD
+   MODAL CONFIRMATION
+  ══════════════════════════════════════════════ */
+  let confirmCallback = null;
+
+  function openConfirm(onConfirm) {
+    confirmCallback = onConfirm;
+    open('confirmModal');
+  }
+
+  const cancelConfirm = document.getElementById('cancelConfirm');
+  if (cancelConfirm) cancelConfirm.addEventListener('click', () => close('confirmModal'));
+
+  const confirmDelete = document.getElementById('confirmDelete');
+  if (confirmDelete) {
+    confirmDelete.addEventListener('click', () => {
+      if (confirmCallback) confirmCallback();
+      confirmCallback = null;
+      close('confirmModal');
+    });
+  }
+
+  /* ═══════════════════════════════════════════
+   COPY TO CLIPBOARD
   ══════════════════════════════════════════════ */
   async function copyToClipboard(text, btn) {
     try {
@@ -283,14 +336,14 @@ const Modal = (() => {
   }
 
   function escapeHtml(str) {
-    return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  return { openDetail, openAdd, openEdit, openHowTo, closeAll, close };
+  return { openDetail, openAdd, openEdit, openHowTo, openConfirm, closeAll, close };
 })();
 
 /* ═══════════════════════════════════════════════
-   TOAST
+ TOAST
 ═══════════════════════════════════════════════ */
 const Toast = (() => {
   let timer;
