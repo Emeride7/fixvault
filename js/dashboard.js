@@ -1,133 +1,186 @@
 /**
  * FixVault – dashboard.js
- * Tableau de bord analytics côté client
+ * Statistiques avancées, graphiques, export/import JSON
  */
 
 const Dashboard = (() => {
-  function escapeHtml(str) {
-    return (str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+
+  function getStats(solutions) {
+    const total = solutions.length;
+    const uniqueCategories = [...new Set(solutions.map(s => s.category))];
+    const categoriesCount = uniqueCategories.length;
+    const allTags = solutions.flatMap(s => s.tags || []);
+    const uniqueTags = [...new Set(allTags)];
+    const tagsCount = uniqueTags.length;
+    const commandsCount = solutions.reduce((sum, s) => sum + (s.commands || []).length, 0);
+    return { total, categoriesCount, tagsCount, commandsCount };
   }
 
-  function computeStats(solutions) {
-    const categories = {};
-    const tags = {};
-    let commands = 0;
+  function getTopCategories(solutions, limit = 5) {
+    const counts = {};
+    solutions.forEach(s => { counts[s.category] = (counts[s.category] || 0) + 1; });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([name, count]) => ({ name, count, percentage: (count / solutions.length) * 100 }));
+  }
 
-    (solutions || []).forEach(sol => {
-      categories[sol.category] = (categories[sol.category] || 0) + 1;
-      (sol.tags || []).forEach(tag => {
-        tags[tag] = (tags[tag] || 0) + 1;
-      });
-      commands += (sol.commands || []).length;
+  function getTopTags(solutions, limit = 10) {
+    const counts = {};
+    solutions.forEach(s => {
+      (s.tags || []).forEach(tag => { counts[tag] = (counts[tag] || 0) + 1; });
     });
-
-    return {
-      total: solutions.length,
-      categoriesCount: Object.keys(categories).length,
-      tagsCount: Object.keys(tags).length,
-      commands,
-      topCategories: Object.entries(categories).sort((a, b) => b[1] - a[1]).slice(0, 8),
-      topTags: Object.entries(tags).sort((a, b) => b[1] - a[1]).slice(0, 14),
-      monthly: computeMonthly(solutions),
-      recent: [...solutions]
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-        .slice(0, 6),
-    };
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([name, count]) => ({ name, count }));
   }
 
-  function computeMonthly(solutions) {
-    const now = new Date();
-    const buckets = [];
-    for (let i = 5; i >= 0; i -= 1) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      buckets.push({
-        key,
-        label: d.toLocaleDateString('fr-FR', { month: 'short' }),
-        count: 0,
-      });
-    }
+  function getRecentActivity(solutions, limit = 5) {
+    return [...solutions]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, limit)
+      .map(sol => ({
+        title: sol.title,
+        category: sol.category,
+        date: new Date(sol.created_at).toLocaleDateString('fr-FR')
+      }));
+  }
 
-    (solutions || []).forEach(sol => {
-      if (!sol.created_at) return;
-      const d = new Date(sol.created_at);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const bucket = buckets.find(b => b.key === key);
-      if (bucket) bucket.count += 1;
+  function getMonthlyEvolution(solutions) {
+    const months = {};
+    solutions.forEach(sol => {
+      if (sol.created_at) {
+        const date = new Date(sol.created_at);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        months[key] = (months[key] || 0) + 1;
+      }
     });
-
-    return buckets;
+    const sorted = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0]));
+    const maxCount = Math.max(...Object.values(months), 1);
+    return sorted.map(([month, count]) => ({ month, count, percentage: (count / maxCount) * 100 }));
   }
 
-  function renderBars(rows) {
-    if (!rows.length) return '<p style="color:var(--text-muted)">Aucune donnée.</p>';
-    const max = Math.max(...rows.map(r => r[1] || r.count || 0), 1);
-    return rows.map(row => {
-      const label = Array.isArray(row) ? row[0] : row.label;
-      const count = Array.isArray(row) ? row[1] : row.count;
-      const width = Math.max(8, Math.round((count / max) * 100));
-      return `
-        <div class="chart-row">
-          <div class="chart-row-top">
-            <span>${escapeHtml(label)}</span>
-            <strong>${count}</strong>
-          </div>
-          <div class="chart-track"><div class="chart-fill" style="width:${width}%"></div></div>
+  function renderStats(stats) {
+    const totalEl = document.getElementById('dashTotal');
+    const categoriesEl = document.getElementById('dashCategories');
+    const tagsEl = document.getElementById('dashTags');
+    const commandsEl = document.getElementById('dashCommands');
+    if (totalEl) totalEl.textContent = stats.total;
+    if (categoriesEl) categoriesEl.textContent = stats.categoriesCount;
+    if (tagsEl) tagsEl.textContent = stats.tagsCount;
+    if (commandsEl) commandsEl.textContent = stats.commandsCount;
+  }
+
+  function renderTopCategories(categories) {
+    const container = document.getElementById('topCategories');
+    if (!container) return;
+    container.innerHTML = categories.map(cat => `
+      <div class="top-item">
+        <span class="top-name">${escapeHtml(cat.name)}</span>
+        <div class="top-bar-container">
+          <div class="top-bar" style="width:${cat.percentage}%;background:${CategoriesManager.getColor(cat.name)}"></div>
         </div>
-      `;
-    }).join('');
+        <span class="top-count">${cat.count}</span>
+      </div>
+    `).join('');
   }
 
-  function renderTags(tags) {
-    if (!tags.length) return '<p style="color:var(--text-muted)">Aucun tag.</p>';
-    return tags.map(([tag, count]) => `<span class="tag">${escapeHtml(tag)} · ${count}</span>`).join('');
+  function renderTopTags(tags) {
+    const container = document.getElementById('topTags');
+    if (!container) return;
+    container.innerHTML = tags.map(tag => `
+      <span class="tag-stat">${escapeHtml(tag.name)} (${tag.count})</span>
+    `).join('');
   }
 
-  function renderRecent(items) {
-    if (!items.length) return '<p style="color:var(--text-muted)">Aucune activité récente.</p>';
-    return items.map(sol => `
+  function renderRecentActivity(activities) {
+    const container = document.getElementById('recentActivity');
+    if (!container) return;
+    container.innerHTML = activities.map(act => `
       <div class="recent-item">
-        <strong>${escapeHtml(sol.title)}</strong>
-        <span>${escapeHtml(sol.category)}</span>
-        <small>${sol.created_at ? new Date(sol.created_at).toLocaleDateString('fr-FR') : '—'}</small>
+        <span class="recent-title">${escapeHtml(act.title)}</span>
+        <span class="recent-cat">${escapeHtml(act.category)}</span>
+        <span class="recent-date">${act.date}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderMonthlyChart(months) {
+    const container = document.getElementById('monthlyChart');
+    if (!container) return;
+    container.innerHTML = months.map(month => `
+      <div class="chart-bar-item">
+        <span class="chart-bar-label">${month.month}</span>
+        <div class="chart-bar-container">
+          <div class="chart-bar" style="height:${month.percentage}%;background:var(--accent)"></div>
+        </div>
+        <span class="chart-bar-value">${month.count}</span>
       </div>
     `).join('');
   }
 
   function open(solutions) {
-    const stats = computeStats(solutions || []);
+    if (!solutions || solutions.length === 0) {
+      Toast.show('Aucune donnée à afficher', 'info');
+      return;
+    }
+    const stats = getStats(solutions);
+    const topCategories = getTopCategories(solutions);
+    const topTags = getTopTags(solutions);
+    const recentActivity = getRecentActivity(solutions);
+    const monthlyEvolution = getMonthlyEvolution(solutions);
 
-    const map = {
-      dashTotal: stats.total,
-      dashCategories: stats.categoriesCount,
-      dashTags: stats.tagsCount,
-      dashCommands: stats.commands,
-    };
-
-    Object.entries(map).forEach(([id, value]) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(value);
-    });
-
-    const topCategories = document.getElementById('topCategories');
-    const topTags = document.getElementById('topTags');
-    const monthlyChart = document.getElementById('monthlyChart');
-    const recentActivity = document.getElementById('recentActivity');
-
-    if (topCategories) topCategories.innerHTML = renderBars(stats.topCategories);
-    if (topTags) topTags.innerHTML = renderTags(stats.topTags);
-    if (monthlyChart) monthlyChart.innerHTML = renderBars(stats.monthly);
-    if (recentActivity) recentActivity.innerHTML = renderRecent(stats.recent);
+    renderStats(stats);
+    renderTopCategories(topCategories);
+    renderTopTags(topTags);
+    renderRecentActivity(recentActivity);
+    renderMonthlyChart(monthlyEvolution);
 
     const modal = document.getElementById('dashboardModal');
-    if (modal) modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    if (modal) {
+      modal.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
   }
 
-  return { open };
+  function close() {
+    const modal = document.getElementById('dashboardModal');
+    if (modal) {
+      modal.classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+  }
+
+  function exportJSON(solutions) {
+    const blob = new Blob([JSON.stringify(solutions, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fixvault-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    Toast.show('Export JSON téléchargé ✓', 'success');
+  }
+
+  function importJSON(file, onLoaded) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!Array.isArray(data)) throw new Error('Format invalide');
+        onLoaded(data);
+        Toast.show('Import réussi ✓', 'success');
+      } catch (err) {
+        Toast.show('Erreur lors de l\'import : ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  return { open, close, exportJSON, importJSON, getStats, getTopCategories, getTopTags, getRecentActivity, getMonthlyEvolution };
 })();

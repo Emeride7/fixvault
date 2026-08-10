@@ -50,18 +50,6 @@ const Modal = (() => {
   const closeHowTo = document.getElementById('closeHowToModal');
   if (closeHowTo) closeHowTo.addEventListener('click', () => close('howToModal'));
 
-  const closeCategories = document.getElementById('closeCategoriesModal');
-  if (closeCategories) closeCategories.addEventListener('click', () => close('categoriesModal'));
-
-  const closeDashboard = document.getElementById('closeDashboardModal');
-  if (closeDashboard) closeDashboard.addEventListener('click', () => close('dashboardModal'));
-
-  const closeLogin = document.getElementById('closeLoginModal');
-  if (closeLogin) closeLogin.addEventListener('click', () => close('loginModal'));
-
-  const cancelLogin = document.getElementById('cancelLogin');
-  if (cancelLogin) cancelLogin.addEventListener('click', () => close('loginModal'));
-
   const cancelForm = document.getElementById('cancelForm');
   if (cancelForm) cancelForm.addEventListener('click', () => close('formModal'));
 

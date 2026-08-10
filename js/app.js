@@ -1,627 +1,691 @@
 /**
  * FixVault – app.js
- * Application principale
+ * Logique principale
  */
 
-const FixVaultApp = (() => {
-  const TABLE = 'solutions';
-  const PAGE_SIZE = 9;
+/* ══════════════════════════════════════════════
+ ÉTAT GLOBAL
+══════════════════════════════════════════════ */
+window.allSolutions = [];
+let currentCategory = 'all';
+let currentSearchTerm = '';
+let debounceTimer = null;
+let currentPage = 0;
+const PAGE_SIZE = 20;
+let showFavoritesOnly = false;
+let deleteTargetId = null;
 
-  const state = {
-    solutions: [],
-    filtered: [],
-    activeCategory: 'all',
-    searchTerm: '',
-    favOnly: false,
-    currentPage: 1,
-    loading: false,
-  };
+/* ══════════════════════════════════════════════
+ POINT D'ENTRÉE
+══════════════════════════════════════════════ */
+window.initApp = async function () {
+  console.log('[FixVault] Initialisation…');
+  await Auth.init();
+  CategoriesManager.init();
+  await loadSolutions();
+  bindEvents();
+  renderSidebar();
+  updateCategorySelect();
+  updateFavCount();
+  window.dispatchEvent(new Event('appReady'));
+};
 
-  function normalizeArray(value) {
-    if (Array.isArray(value)) return value.filter(Boolean);
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) return [];
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.filter(Boolean);
-      } catch {}
-      return trimmed.split(',').map(v => v.trim()).filter(Boolean);
+/* ══════════════════════════════════════════════
+ CHARGEMENT DES DONNÉES
+══════════════════════════════════════════════ */
+async function loadSolutions() {
+  showLoading(true);
+  hideError();
+
+  try {
+    const { data, error } = await window.supabaseClient
+      .from('solutions')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    window.allSolutions = data || [];
+    Cache.save(window.allSolutions);
+  } catch (err) {
+    console.error('[FixVault] Erreur Supabase :', err);
+    const cached = Cache.load();
+    if (cached && cached.data) {
+      window.allSolutions = cached.data;
+      Toast.show('Mode hors-ligne : données en cache', 'info');
+      const badge = document.getElementById('offlineBadge');
+      if (badge) badge.classList.remove('hidden');
+    } else {
+      showError('Impossible de contacter la base de données. Vérifiez votre connexion et la configuration Supabase.');
+      showLoading(false);
+      return;
     }
-    return [];
   }
 
-  function normalizeSolution(row) {
-    return {
-      id: row.id,
-      title: row.title || '',
-      category: row.category || 'Sans catégorie',
-      problem: row.problem || '',
-      solution: row.solution || '',
-      commands: normalizeArray(row.commands),
-      tags: normalizeArray(row.tags),
-      created_at: row.created_at || row.inserted_at || null,
-      updated_at: row.updated_at || null,
-    };
+  showLoading(false);
+  console.log(`[FixVault] ${window.allSolutions.length} solutions chargées.`);
+  updateCategoryCounts();
+  renderFilteredSolutions();
+}
+
+window.loadSolutions = loadSolutions;
+
+function showLoading(show) {
+  const loadingEl = document.getElementById('loadingState');
+  const gridEl = document.getElementById('solutionsGrid');
+  if (loadingEl) loadingEl.classList.toggle('hidden', !show);
+  if (gridEl) gridEl.classList.toggle('hidden', show);
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorState');
+  const txt = document.getElementById('errorMessage');
+  if (txt) txt.textContent = msg;
+  if (el) el.classList.remove('hidden');
+}
+
+function hideError() {
+  const el = document.getElementById('errorState');
+  if (el) el.classList.add('hidden');
+}
+
+/* ══════════════════════════════════════════════
+ RENDU SIDEBAR
+══════════════════════════════════════════════ */
+function renderSidebar() {
+  const container = document.getElementById('categoryList');
+  if (!container) return;
+
+  const categoriesHtml = CategoriesManager.getSidebarHtml();
+  container.innerHTML = `
+    <li class="category-item active" data-cat="all">
+      <span class="cat-icon">▦</span> Toutes
+      <span id="count-all" class="cat-count">0</span>
+    </li>
+    ${categoriesHtml}
+  `;
+
+  updateCategoryCounts();
+  rebindCategoryEvents();
+}
+
+function rebindCategoryEvents() {
+  const categoryList = document.getElementById('categoryList');
+  if (!categoryList) return;
+  categoryList.querySelectorAll('.category-item').forEach(item => {
+    item.removeEventListener('click', handleCategoryClick);
+    item.addEventListener('click', handleCategoryClick);
+  });
+}
+
+function handleCategoryClick(e) {
+  const item = e.target.closest('.category-item');
+  if (!item) return;
+  document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
+  item.classList.add('active');
+  const catValue = item.dataset.cat;
+  currentCategory = catValue === 'all' ? 'all' : catValue;
+  currentPage = 0;
+  renderFilteredSolutions();
+}
+
+/* ══════════════════════════════════════════════
+ RENDU PRINCIPAL + PAGINATION
+══════════════════════════════════════════════ */
+function renderFilteredSolutions() {
+  let results = Search.filter(window.allSolutions, currentSearchTerm, currentCategory);
+
+  if (showFavoritesOnly) {
+    const favs = Cache.getFavorites();
+    results = results.filter(r => favs.includes(r.id));
   }
 
-  function setLoading(show) {
-    state.loading = show;
-    const loading = document.getElementById('loadingState');
-    const grid = document.getElementById('solutionsGrid');
-    const empty = document.getElementById('emptyState');
-    const error = document.getElementById('errorState');
-    if (loading) loading.classList.toggle('hidden', !show);
-    if (show) {
-      if (grid) grid.innerHTML = '';
-      if (empty) empty.classList.add('hidden');
-      if (error) error.classList.add('hidden');
+  const total = results.length;
+  const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+  if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
+
+  const paged = results.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  renderSolutions(paged);
+  renderPagination(total, totalPages);
+
+  document.getElementById('statTotal').textContent = window.allSolutions.length;
+  document.getElementById('statFiltered').textContent = total;
+
+  const titleEl = document.getElementById('contentTitle');
+  const metaEl = document.getElementById('contentMeta');
+
+  if (currentCategory === 'all') titleEl.textContent = showFavoritesOnly ? 'Solutions favorites' : 'Toutes les solutions';
+  else titleEl.textContent = currentCategory;
+
+  metaEl.textContent = `${total} solution${total > 1 ? 's' : ''} · Page ${currentPage + 1}/${totalPages}`;
+}
+
+function renderPagination(total, totalPages) {
+  const pag = document.getElementById('pagination');
+  if (total <= PAGE_SIZE) {
+    pag.classList.add('hidden');
+    return;
+  }
+  pag.classList.remove('hidden');
+  document.getElementById('pageInfo').textContent = `Page ${currentPage + 1} / ${totalPages}`;
+  document.getElementById('btnPrevPage').disabled = currentPage === 0;
+  document.getElementById('btnNextPage').disabled = currentPage >= totalPages - 1;
+}
+
+function renderSolutions(solutions) {
+  const grid = document.getElementById('solutionsGrid');
+  const empty = document.getElementById('emptyState');
+
+  if (!solutions.length) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  grid.innerHTML = solutions.map((sol, i) => buildCard(sol, i)).join('');
+
+  grid.querySelectorAll('.solution-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const sol = window.allSolutions.find(s => s.id === card.dataset.id);
+      if (sol) openSolutionDetail(sol);
+    });
+  });
+}
+
+function buildCard(sol, index) {
+  const catColor = CategoriesManager.getColor(sol.category);
+  const date = sol.created_at
+    ? new Date(sol.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+    : '';
+  const isFav = Cache.isFavorite(sol.id);
+
+  const tags = (sol.tags || []).slice(0, 4).map(t => {
+    const isMatch = currentSearchTerm && t.toLowerCase().includes(currentSearchTerm.toLowerCase());
+    return `<span class="tag ${isMatch ? 'tag-highlight' : ''}">${escapeHtml(t)}</span>`;
+  }).join('');
+
+  const firstCmd = (sol.commands || []).find(Boolean);
+  const cmdPreview = firstCmd ? `<div class="card-cmd-preview">&gt; ${escapeHtml(firstCmd)}</div>` : '';
+
+  return `
+    <article class="solution-card cat-${escapeHtml(sol.category.replace(/\s/g, '-').toLowerCase())}" data-id="${escapeHtml(sol.id)}" style="--cat-color:${catColor};animation-delay:${index * 0.03}s">
+      <div class="card-top">
+        <span class="card-category">${escapeHtml(sol.category)}</span>
+        <span class="card-date">${date}</span>
+      </div>
+      <h3 class="card-title">
+        ${isFav ? '<span class="card-fav">★</span>' : ''}
+        ${escapeHtml(sol.title)}
+      </h3>
+      <p class="card-problem">${escapeHtml(sol.problem)}</p>
+      ${cmdPreview}
+      <div class="card-tags">${tags}</div>
+    </article>
+  `;
+}
+
+/* ══════════════════════════════════════════════
+ COMPTEURS & FAVORIS
+══════════════════════════════════════════════ */
+function updateCategoryCounts() {
+  const total = window.allSolutions.length;
+  const countAll = document.getElementById('count-all');
+  if (countAll) countAll.textContent = total;
+
+  CategoriesManager.getAll().forEach(cat => {
+    const count = window.allSolutions.filter(s => s.category === cat.label).length;
+    const slug = cat.label.replace(/\s/g, '-').toLowerCase();
+    const el = document.getElementById(`count-${slug}`);
+    if (el) el.textContent = count;
+  });
+}
+
+function updateCategorySelect() {
+  const select = document.getElementById('fCategory');
+  if (select) {
+    select.innerHTML = '<option value="">— Choisir —</option>' + CategoriesManager.getOptionsHtml();
+  }
+}
+
+function updateFavCount() {
+  const el = document.getElementById('statFav');
+  if (el) el.textContent = Cache.getFavorites().length;
+}
+
+/* ══════════════════════════════════════════════
+ CRUD
+══════════════════════════════════════════════ */
+async function saveSolution(data, editId = null) {
+  let result;
+  try {
+    if (editId) {
+      result = await window.supabaseClient
+        .from('solutions')
+        .update(data)
+        .eq('id', editId)
+        .select()
+        .single();
+    } else {
+      result = await window.supabaseClient
+        .from('solutions')
+        .insert([data])
+        .select()
+        .single();
     }
+  } catch (err) {
+    Toast.show('Erreur réseau lors de la sauvegarde.', 'error');
+    return;
   }
 
-  function showError(message) {
-    const error = document.getElementById('errorState');
-    const msg = document.getElementById('errorMessage');
-    const empty = document.getElementById('emptyState');
-    const grid = document.getElementById('solutionsGrid');
-    if (msg) msg.textContent = message;
-    if (error) error.classList.remove('hidden');
-    if (empty) empty.classList.add('hidden');
-    if (grid) grid.innerHTML = '';
+  const { data: saved, error } = result;
+  if (error) {
+    console.error('[FixVault] Erreur sauvegarde :', error);
+    Toast.show('Erreur lors de la sauvegarde.', 'error');
+    return;
   }
 
-  async function loadSolutions(forceRemote = false) {
-    setLoading(true);
-    try {
-      const canUseRemote = !!window.supabaseClient;
-      if (!canUseRemote && !forceRemote) {
-        const cached = Cache.load();
-        if (cached?.data?.length) {
-          state.solutions = cached.data.map(normalizeSolution);
-          renderAll();
-          updateOfflineBadge(true);
-          Toast.show('Mode hors-ligne : données chargées depuis le cache.', 'info');
-          return;
+  if (editId) {
+    const idx = window.allSolutions.findIndex(s => s.id === editId);
+    if (idx !== -1) window.allSolutions[idx] = saved;
+    Toast.show('Solution mise à jour ✓', 'success');
+  } else {
+    window.allSolutions.unshift(saved);
+    Toast.show('Solution enregistrée ✓', 'success');
+  }
+
+  Cache.save(window.allSolutions);
+  updateCategoryCounts();
+  renderFilteredSolutions();
+}
+
+async function deleteSolution(id) {
+  const { error } = await window.supabaseClient
+    .from('solutions')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('[FixVault] Erreur suppression :', error);
+    Toast.show('Erreur lors de la suppression.', 'error');
+    return;
+  }
+
+  window.allSolutions = window.allSolutions.filter(s => s.id !== id);
+  Modal.closeAll();
+  Toast.show('Solution supprimée.', 'info');
+  Cache.save(window.allSolutions);
+  updateCategoryCounts();
+  renderFilteredSolutions();
+}
+
+/* ══════════════════════════════════════════════
+ MODALES & NAVIGATION
+══════════════════════════════════════════════ */
+function openSolutionDetail(sol) {
+  Modal.openDetail(
+    sol,
+    (s) => Modal.openEdit(s, saveSolution),
+    (id) => deleteSolution(id)
+  );
+}
+
+/* ══════════════════════════════════════════════
+ GESTION CATÉGORIES (ADMIN)
+══════════════════════════════════════════════ */
+async function openCategoriesManager() {
+  if (!Auth.isAdmin()) {
+    Toast.show('Accès réservé aux administrateurs', 'error');
+    return;
+  }
+  const modal = document.getElementById('categoriesModal');
+  if (!modal) return;
+
+  const listContainer = document.getElementById('categoriesList');
+  CategoriesManager.renderManageList(
+    listContainer,
+    (label) => editCategory(label),
+    async (label) => {
+      if (confirm(`Supprimer la catégorie "${label}" ?`)) {
+        try {
+          await CategoriesManager.remove(label);
+          renderSidebar();
+          updateCategorySelect();
+          Toast.show(`Catégorie "${label}" supprimée`, 'success');
+          openCategoriesManager();
+        } catch (err) {
+          Toast.show(err.message, 'error');
         }
-        throw new Error('Base de données indisponible.');
       }
-
-      const { data, error } = await window.supabaseClient
-        .from(TABLE)
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      state.solutions = (data || []).map(normalizeSolution);
-      Cache.save(state.solutions);
-      updateOfflineBadge(false);
-      renderAll();
-    } catch (error) {
-      console.error('[FixVault] loadSolutions failed:', error);
-      const cached = Cache.load();
-      if (cached?.data?.length) {
-        state.solutions = cached.data.map(normalizeSolution);
-        renderAll();
-        updateOfflineBadge(true);
-        Toast.show('Connexion indisponible. Cache local utilisé.', 'info');
-      } else {
-        showError(`Impossible de charger les solutions${error?.message ? ` : ${error.message}` : '.'}`);
-      }
-    } finally {
-      setLoading(false);
     }
-  }
+  );
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
 
-  function updateOfflineBadge(isOffline) {
-    const badge = document.getElementById('offlineBadge');
-    if (badge) badge.classList.toggle('hidden', !isOffline);
-  }
+async function editCategory(label) {
+  const cat = CategoriesManager.getAll().find(c => c.label === label);
+  if (!cat) return;
+  const newLabel = prompt('Nouveau nom :', cat.label);
+  const newIcon = prompt('Nouvelle icône :', cat.icon);
+  const newColor = prompt('Nouvelle couleur (hex) :', cat.color);
 
-  function renderCategories() {
-    const list = document.getElementById('categoryList');
-    if (!list) return;
+  if (newLabel || newIcon || newColor) {
+    const updates = {};
+    if (newLabel && newLabel !== cat.label) updates.label = newLabel;
+    if (newIcon && newIcon !== cat.icon) updates.icon = newIcon;
+    if (newColor && newColor !== cat.color) updates.color = newColor;
 
-    list.innerHTML = `
-      <li class="category-item ${state.activeCategory === 'all' ? 'active' : ''}" data-cat="all">
-        <span class="cat-icon">▦</span> Toutes
-        <span id="count-all" class="cat-count">0</span>
-      </li>
-      ${CategoriesManager.getSidebarHtml()}
-    `;
-
-    list.querySelectorAll('.category-item').forEach(item => {
-      item.addEventListener('click', () => {
-        state.activeCategory = item.dataset.cat;
-        state.currentPage = 1;
-        renderCategories();
-        applyFilters();
-      });
-    });
-
-    updateCategoryCounts();
-  }
-
-  function updateCategoryCounts() {
-    const allCount = document.getElementById('count-all');
-    if (allCount) allCount.textContent = String(state.solutions.length);
-
-    const counts = state.solutions.reduce((acc, sol) => {
-      acc[sol.category] = (acc[sol.category] || 0) + 1;
-      return acc;
-    }, {});
-
-    CategoriesManager.getAll().forEach(cat => {
-      const slug = cat.label.replace(/\s/g, '-').toLowerCase();
-      const el = document.getElementById(`count-${slug}`);
-      if (el) el.textContent = String(counts[cat.label] || 0);
-    });
-  }
-
-  function getCurrentCategoryLabel() {
-    if (state.activeCategory === 'all') return 'Toutes les solutions';
-    return state.activeCategory;
-  }
-
-  function truncate(text, len = 150) {
-    const plain = (text || '').replace(/[#>*`_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (plain.length <= len) return plain;
-    return plain.slice(0, len - 1) + '…';
-  }
-
-  function escapeHtml(str) {
-    return (str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function renderSolutionCard(sol) {
-    const fav = Cache.isFavorite(sol.id);
-    const color = CategoriesManager.getColor(sol.category);
-    const icon = CategoriesManager.getIcon(sol.category);
-    return `
-      <article class="solution-card" data-id="${escapeHtml(sol.id)}">
-        <div class="solution-card-top">
-          <span class="solution-category" style="background:${color}22;color:${color};border:1px solid ${color}44">
-            ${escapeHtml(icon)} ${escapeHtml(sol.category)}
-          </span>
-          <button class="card-fav-btn ${fav ? 'is-fav' : ''}" data-fav-id="${escapeHtml(sol.id)}" title="Favori">
-            ${fav ? '★' : '☆'}
-          </button>
-        </div>
-        <h3 class="solution-title">${escapeHtml(sol.title)}</h3>
-        <p class="solution-problem">${escapeHtml(truncate(sol.problem, 140))}</p>
-        <div class="solution-tags">
-          ${(sol.tags || []).slice(0, 4).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
-        </div>
-        <div class="solution-meta-row">
-          <span>${(sol.commands || []).length} commande${(sol.commands || []).length > 1 ? 's' : ''}</span>
-          <span>${sol.created_at ? new Date(sol.created_at).toLocaleDateString('fr-FR') : '—'}</span>
-        </div>
-      </article>
-    `;
-  }
-
-  function renderGrid() {
-    const grid = document.getElementById('solutionsGrid');
-    const empty = document.getElementById('emptyState');
-    const error = document.getElementById('errorState');
-    if (!grid) return;
-
-    if (error) error.classList.add('hidden');
-
-    if (!state.filtered.length) {
-      grid.innerHTML = '';
-      if (empty) empty.classList.remove('hidden');
-      renderPagination();
-      updateHeaderMeta();
-      return;
-    }
-
-    if (empty) empty.classList.add('hidden');
-
-    const start = (state.currentPage - 1) * PAGE_SIZE;
-    const pageItems = state.filtered.slice(start, start + PAGE_SIZE);
-    grid.innerHTML = pageItems.map(renderSolutionCard).join('');
-
-    grid.querySelectorAll('.solution-card').forEach(card => {
-      card.addEventListener('click', e => {
-        if (e.target.closest('.card-fav-btn')) return;
-        const id = card.dataset.id;
-        const sol = state.solutions.find(s => String(s.id) === String(id));
-        if (sol) Modal.openDetail(sol, handleOpenEdit, handleDeleteRequest);
-      });
-    });
-
-    grid.querySelectorAll('.card-fav-btn').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        Cache.toggleFavorite(btn.dataset.favId);
-        updateFavCount();
-        renderFilteredSolutions();
-      });
-    });
-
-    renderPagination();
-    updateHeaderMeta();
-  }
-
-  function updateHeaderMeta() {
-    const title = document.getElementById('contentTitle');
-    const meta = document.getElementById('contentMeta');
-    if (title) title.textContent = getCurrentCategoryLabel() + (state.favOnly ? ' · Favoris' : '');
-    if (meta) meta.textContent = `${state.filtered.length} solution${state.filtered.length > 1 ? 's' : ''}`;
-  }
-
-  function renderPagination() {
-    const pagination = document.getElementById('pagination');
-    const pageInfo = document.getElementById('pageInfo');
-    const prevBtn = document.getElementById('btnPrevPage');
-    const nextBtn = document.getElementById('btnNextPage');
-
-    const totalPages = Math.max(1, Math.ceil(state.filtered.length / PAGE_SIZE));
-    if (state.currentPage > totalPages) state.currentPage = totalPages;
-
-    if (pagination) pagination.classList.toggle('hidden', state.filtered.length <= PAGE_SIZE);
-    if (pageInfo) pageInfo.textContent = `Page ${state.currentPage} / ${totalPages}`;
-    if (prevBtn) prevBtn.disabled = state.currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = state.currentPage >= totalPages;
-  }
-
-  function updateSidebarStats() {
-    const total = document.getElementById('statTotal');
-    const filtered = document.getElementById('statFiltered');
-    if (total) total.textContent = String(state.solutions.length);
-    if (filtered) filtered.textContent = String(state.filtered.length);
-    updateFavCount();
-  }
-
-  function updateFavCount() {
-    const favEl = document.getElementById('statFav');
-    const favCount = state.solutions.filter(sol => Cache.isFavorite(sol.id)).length;
-    if (favEl) favEl.textContent = String(favCount);
-  }
-
-  function applyFilters() {
-    let result = Search.filter(state.solutions, state.searchTerm, state.activeCategory);
-    if (state.favOnly) result = result.filter(sol => Cache.isFavorite(sol.id));
-    state.filtered = result;
-    renderGrid();
-    updateSidebarStats();
-  }
-
-  function renderAll() {
-    renderCategories();
-    applyFilters();
-  }
-
-  function renderFilteredSolutions() {
-    applyFilters();
-  }
-
-  function findSolutionById(id) {
-    return state.solutions.find(sol => String(sol.id) === String(id));
-  }
-
-  async function saveSolution(payload, editId = null) {
-    if (!Auth.isAdmin()) {
-      openLoginModal();
-      return;
-    }
-
-    try {
-      const submitBtn = document.getElementById('submitForm');
-      if (submitBtn) submitBtn.disabled = true;
-
-      const row = {
-        title: payload.title,
-        category: payload.category,
-        problem: payload.problem,
-        solution: payload.solution,
-        commands: payload.commands,
-        tags: payload.tags,
-      };
-
-      let error;
-      if (editId) {
-        ({ error } = await window.supabaseClient.from(TABLE).update(row).eq('id', editId));
-      } else {
-        ({ error } = await window.supabaseClient.from(TABLE).insert([row]));
-      }
-      if (error) throw error;
-
-      Toast.show(editId ? 'Solution mise à jour ✓' : 'Solution ajoutée ✓', 'success');
-      await loadSolutions(true);
-    } catch (error) {
-      console.error('[FixVault] saveSolution failed:', error);
-      Toast.show(`Enregistrement impossible${error?.message ? ` : ${error.message}` : ''}`, 'error');
-    } finally {
-      const submitBtn = document.getElementById('submitForm');
-      if (submitBtn) submitBtn.disabled = false;
-    }
-  }
-
-  function handleOpenEdit(sol) {
-    if (!Auth.isAdmin()) {
-      openLoginModal();
-      return;
-    }
-    Modal.openEdit(sol, saveSolution);
-  }
-
-  async function handleDeleteRequest(id) {
-    if (!Auth.isAdmin()) {
-      openLoginModal();
-      return;
-    }
-    try {
-      const { error } = await window.supabaseClient.from(TABLE).delete().eq('id', id);
-      if (error) throw error;
-      Toast.show('Solution supprimée.', 'info');
-      await loadSolutions(true);
-    } catch (error) {
-      console.error('[FixVault] delete failed:', error);
-      Toast.show(`Suppression impossible${error?.message ? ` : ${error.message}` : ''}`, 'error');
-    }
-  }
-
-  function exportSolutions() {
-    const payload = JSON.stringify(state.solutions, null, 2);
-    const blob = new Blob([payload], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `fixvault-export-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    Toast.show('Export JSON téléchargé.', 'success');
-  }
-
-  async function importSolutions(file) {
-    if (!Auth.isAdmin()) {
-      openLoginModal();
-      return;
-    }
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('Le fichier JSON doit contenir un tableau.');
-
-      const rows = parsed.map(item => ({
-        ...(item.id ? { id: item.id } : {}),
-        title: item.title || '',
-        category: item.category || 'Sans catégorie',
-        problem: item.problem || '',
-        solution: item.solution || '',
-        commands: normalizeArray(item.commands),
-        tags: normalizeArray(item.tags),
-      }));
-
-      const { error } = await window.supabaseClient.from(TABLE).upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
-      Toast.show('Import terminé ✓', 'success');
-      await loadSolutions(true);
-    } catch (error) {
-      console.error('[FixVault] import failed:', error);
-      Toast.show(`Import impossible${error?.message ? ` : ${error.message}` : ''}`, 'error');
-    }
-  }
-
-  function openLoginModal() {
-    const email = document.getElementById('loginEmail');
-    const password = document.getElementById('loginPassword');
-    if (email) email.value = '';
-    if (password) password.value = '';
-    const modal = document.getElementById('loginModal');
-    if (modal) modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-
-  async function handleLoginSubmit() {
-    const email = document.getElementById('loginEmail')?.value.trim();
-    const password = document.getElementById('loginPassword')?.value || '';
-    if (!email || !password) {
-      Toast.show('Email et mot de passe requis.', 'error');
-      return;
-    }
-    const ok = await Auth.login(email, password);
-    if (ok) {
-      const loginModal = document.getElementById('loginModal');
-      if (loginModal) loginModal.classList.add('hidden');
-      document.body.style.overflow = '';
-      await loadSolutions(true);
-    }
-  }
-
-  function setupSearch() {
-    const input = document.getElementById('searchInput');
-    const help = document.getElementById('searchHelp');
-    if (!input) return;
-
-    input.addEventListener('focus', () => {
-      if (help) help.classList.remove('hidden');
-    });
-    input.addEventListener('blur', () => {
-      setTimeout(() => {
-        if (help) help.classList.add('hidden');
-        Search.hideSuggestions();
-      }, 180);
-    });
-
-    input.addEventListener('input', () => {
-      state.searchTerm = input.value;
-      state.currentPage = 1;
-      renderFilteredSolutions();
-      const suggestions = Search.getSuggestions(state.solutions, input.value);
-      Search.renderSuggestions(suggestions, Search.parseQuery ? Search.parseQuery(input.value).free : input.value, id => {
-        const sol = findSolutionById(id);
-        if (sol) Modal.openDetail(sol, handleOpenEdit, handleDeleteRequest);
-      });
-    });
-
-    document.addEventListener('keydown', e => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        input.focus();
-        input.select();
-      }
-    });
-  }
-
-  function setupPagination() {
-    const prevBtn = document.getElementById('btnPrevPage');
-    const nextBtn = document.getElementById('btnNextPage');
-    if (prevBtn) prevBtn.addEventListener('click', () => {
-      if (state.currentPage > 1) {
-        state.currentPage -= 1;
-        renderGrid();
-      }
-    });
-    if (nextBtn) nextBtn.addEventListener('click', () => {
-      const totalPages = Math.max(1, Math.ceil(state.filtered.length / PAGE_SIZE));
-      if (state.currentPage < totalPages) {
-        state.currentPage += 1;
-        renderGrid();
-      }
-    });
-  }
-
-  function setupCategoryManagement() {
-    const manageBtn = document.getElementById('btnManageCategories');
-    const addBtn = document.getElementById('btnAddCategory');
-    const list = document.getElementById('categoriesList');
-
-    function refreshManageList() {
-      CategoriesManager.renderManageList(list, label => {
-        const current = CategoriesManager.getAll().find(c => c.label === label);
-        if (!current) return;
-        const newLabel = window.prompt('Nom de la catégorie', current.label);
-        if (!newLabel) return;
-        const newIcon = window.prompt('Icône', current.icon || '◈');
-        const newColor = window.prompt('Couleur hexadécimale', current.color || '#8891a8');
-        CategoriesManager.update(label, {
-          label: newLabel.trim(),
-          icon: (newIcon || '◈').trim(),
-          color: (newColor || '#8891a8').trim(),
-        });
-        renderCategories();
-        refreshManageList();
-        Toast.show('Catégorie mise à jour.', 'success');
-      }, label => {
-        Modal.openConfirm(() => {
-          CategoriesManager.remove(label);
-          renderCategories();
-          refreshManageList();
-          Toast.show('Catégorie supprimée.', 'info');
-        });
-      });
-    }
-
-    if (manageBtn) manageBtn.addEventListener('click', () => {
-      refreshManageList();
-      const modal = document.getElementById('categoriesModal');
-      if (modal) modal.classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-    });
-
-    if (addBtn) addBtn.addEventListener('click', () => {
-      const labelEl = document.getElementById('newCategoryLabel');
-      const iconEl = document.getElementById('newCategoryIcon');
-      const colorEl = document.getElementById('newCategoryColor');
-      const label = labelEl?.value.trim();
-      const icon = iconEl?.value.trim() || '◈';
-      const color = colorEl?.value || '#8891a8';
+    if (Object.keys(updates).length > 0) {
       try {
-        CategoriesManager.add(label, icon, color);
-        if (labelEl) labelEl.value = '';
-        if (iconEl) iconEl.value = '◈';
-        if (colorEl) colorEl.value = '#00e5a0';
-        renderCategories();
-        refreshManageList();
-        Toast.show('Catégorie ajoutée ✓', 'success');
-      } catch (error) {
-        Toast.show(error.message || 'Ajout impossible.', 'error');
+        await CategoriesManager.update(label, updates);
+        renderSidebar();
+        updateCategorySelect();
+        Toast.show('Catégorie mise à jour', 'success');
+        openCategoriesManager();
+      } catch (err) {
+        Toast.show(err.message, 'error');
+      }
+    }
+  }
+}
+
+async function addNewCategory() {
+  const label = document.getElementById('newCategoryLabel').value.trim();
+  const icon = document.getElementById('newCategoryIcon').value.trim() || '◈';
+  const color = document.getElementById('newCategoryColor').value;
+
+  if (!label) {
+    Toast.show('Nom de catégorie requis', 'error');
+    return;
+  }
+  try {
+    await CategoriesManager.add(label, icon, color);
+    renderSidebar();
+    updateCategorySelect();
+    document.getElementById('newCategoryLabel').value = '';
+    Toast.show(`Catégorie "${label}" ajoutée`, 'success');
+    openCategoriesManager();
+  } catch (err) {
+    Toast.show(err.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════
+ ÉVÉNEMENTS UI
+══════════════════════════════════════════════ */
+function bindEvents() {
+  bindAuthEvents();
+  bindSearchEvents();
+  bindCategoryEvents();
+  bindButtonEvents();
+  bindAccessibilityEvents();
+  bindDashboardEvents();
+  bindPaginationEvents();
+  bindThemeEvents();
+  bindImportExportEvents();
+}
+
+function bindAuthEvents() {
+  const authBtn = document.getElementById('btnAuthToggle');
+  if (authBtn) {
+    authBtn.addEventListener('click', () => {
+      if (Auth.isAdmin()) {
+        Auth.logout();
+      } else {
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('loginModal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => document.getElementById('loginEmail').focus(), 100);
       }
     });
   }
 
-  function setupButtons() {
-    document.getElementById('btnHowTo')?.addEventListener('click', () => Modal.openHowTo());
-    document.getElementById('btnDashboard')?.addEventListener('click', () => Dashboard.open(state.solutions));
-    document.getElementById('btnRefreshDash')?.addEventListener('click', () => Dashboard.open(state.solutions));
-    document.getElementById('btnExportDash')?.addEventListener('click', exportSolutions);
-    document.getElementById('btnExport')?.addEventListener('click', exportSolutions);
-    document.getElementById('btnImport')?.addEventListener('click', () => document.getElementById('importFile')?.click());
-    document.getElementById('importFile')?.addEventListener('change', e => importSolutions(e.target.files?.[0]));
-    document.getElementById('btnToggleFavFilter')?.addEventListener('click', e => {
-      state.favOnly = !state.favOnly;
-      state.currentPage = 1;
-      e.currentTarget.classList.toggle('btn-admin-active', state.favOnly);
-      renderFilteredSolutions();
-    });
-    document.getElementById('btnAddSolution')?.addEventListener('click', () => {
-      if (!Auth.isAdmin()) return openLoginModal();
-      Modal.openAdd(saveSolution);
-    });
-    document.getElementById('btnAddFromEmpty')?.addEventListener('click', () => {
-      if (!Auth.isAdmin()) return openLoginModal();
-      Modal.openAdd(saveSolution);
-    });
-    document.getElementById('btnAuthToggle')?.addEventListener('click', async () => {
-      if (Auth.isAdmin()) {
-        await Auth.logout();
-      } else {
-        openLoginModal();
+  const submitLogin = document.getElementById('submitLogin');
+  if (submitLogin) {
+    submitLogin.addEventListener('click', async () => {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      if (!email || !password) {
+        Toast.show('Email et mot de passe requis.', 'error');
+        return;
+      }
+      const ok = await Auth.login(email, password);
+      if (ok) {
+        document.getElementById('loginModal').classList.add('hidden');
+        document.body.style.overflow = '';
       }
     });
-    document.getElementById('submitLogin')?.addEventListener('click', handleLoginSubmit);
-    document.getElementById('cancelLogin')?.addEventListener('click', () => {
-      document.getElementById('loginModal')?.classList.add('hidden');
+  }
+
+  const loginPassword = document.getElementById('loginPassword');
+  if (loginPassword) {
+    loginPassword.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('submitLogin').click();
+    });
+  }
+
+  const cancelLogin = document.getElementById('cancelLogin');
+  if (cancelLogin) {
+    cancelLogin.addEventListener('click', () => {
+      document.getElementById('loginModal').classList.add('hidden');
       document.body.style.overflow = '';
     });
-    document.getElementById('loginPassword')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') handleLoginSubmit();
+  }
+
+  const closeLoginModal = document.getElementById('closeLoginModal');
+  if (closeLoginModal) {
+    closeLoginModal.addEventListener('click', () => {
+      document.getElementById('loginModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    });
+  }
+}
+
+function bindSearchEvents() {
+  const searchInput = document.getElementById('searchInput');
+  const searchHelp = document.getElementById('searchHelp');
+  if (!searchInput) return;
+
+  searchInput.addEventListener('focus', () => {
+    if (searchHelp) searchHelp.classList.remove('hidden');
+  });
+
+  searchInput.addEventListener('blur', () => {
+    setTimeout(() => { if (searchHelp) searchHelp.classList.add('hidden'); }, 200);
+  });
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      currentSearchTerm = searchInput.value.trim();
+      currentPage = 0;
+      renderFilteredSolutions();
+
+      const suggestions = Search.getSuggestions(window.allSolutions, currentSearchTerm);
+      Search.renderSuggestions(suggestions, currentSearchTerm, (id) => {
+        const sol = window.allSolutions.find(s => s.id === id);
+        if (sol) {
+          searchInput.value = sol.title;
+          currentSearchTerm = sol.title;
+          currentPage = 0;
+          renderFilteredSolutions();
+          openSolutionDetail(sol);
+        }
+      });
+    }, 180);
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-wrapper')) Search.hideSuggestions();
+  });
+
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  });
+}
+
+function bindCategoryEvents() {
+  const categoryList = document.getElementById('categoryList');
+  if (!categoryList) return;
+  categoryList.querySelectorAll('.category-item').forEach(item => {
+    item.addEventListener('click', handleCategoryClick);
+  });
+}
+
+function bindButtonEvents() {
+  const addBtn = document.getElementById('btnAddSolution');
+  if (addBtn) addBtn.addEventListener('click', () => Modal.openAdd(saveSolution));
+
+  const addFromEmpty = document.getElementById('btnAddFromEmpty');
+  if (addFromEmpty) addFromEmpty.addEventListener('click', () => Modal.openAdd(saveSolution));
+
+  const howToBtn = document.getElementById('btnHowTo');
+  if (howToBtn) howToBtn.addEventListener('click', () => Modal.openHowTo());
+
+  const manageCategoriesBtn = document.getElementById('btnManageCategories');
+  if (manageCategoriesBtn) manageCategoriesBtn.addEventListener('click', openCategoriesManager);
+
+  const addCategoryBtn = document.getElementById('btnAddCategory');
+  if (addCategoryBtn) addCategoryBtn.addEventListener('click', addNewCategory);
+
+  const closeCategoriesBtn = document.getElementById('closeCategoriesBtn');
+  if (closeCategoriesBtn) {
+    closeCategoriesBtn.addEventListener('click', () => {
+      document.getElementById('categoriesModal').classList.add('hidden');
+      document.body.style.overflow = '';
     });
   }
 
-  function setupConnectivity() {
-    window.addEventListener('online', () => {
-      updateOfflineBadge(false);
-      loadSolutions(true);
-    });
-    window.addEventListener('offline', () => {
-      updateOfflineBadge(true);
-      Toast.show('Connexion perdue. Le mode hors-ligne reste disponible.', 'info');
+  const closeCategoriesModal = document.getElementById('closeCategoriesModal');
+  if (closeCategoriesModal) {
+    closeCategoriesModal.addEventListener('click', () => {
+      document.getElementById('categoriesModal').classList.add('hidden');
+      document.body.style.overflow = '';
     });
   }
 
-  async function init() {
-    CategoriesManager.init();
-    await Auth.init();
-    setupButtons();
-    setupSearch();
-    setupPagination();
-    setupCategoryManagement();
-    setupConnectivity();
-    await loadSolutions();
+  const favFilterBtn = document.getElementById('btnToggleFavFilter');
+  if (favFilterBtn) {
+    favFilterBtn.addEventListener('click', () => {
+      showFavoritesOnly = !showFavoritesOnly;
+      favFilterBtn.classList.toggle('btn-admin-active', showFavoritesOnly);
+      currentPage = 0;
+      renderFilteredSolutions();
+    });
+  }
+}
+
+function bindDashboardEvents() {
+  const dashboardBtn = document.getElementById('btnDashboard');
+  if (dashboardBtn) {
+    dashboardBtn.addEventListener('click', () => {
+      if (window.allSolutions.length === 0) {
+        Toast.show('Aucune solution à analyser', 'info');
+        return;
+      }
+      Dashboard.open(window.allSolutions);
+    });
   }
 
-  return {
-    init,
-    loadSolutions,
-    renderFilteredSolutions,
-    updateFavCount,
-    getState: () => state,
-  };
-})();
+  const closeDashboardBtn = document.getElementById('closeDashboardModal');
+  if (closeDashboardBtn) closeDashboardBtn.addEventListener('click', () => Dashboard.close());
 
-window.initApp = () => FixVaultApp.init();
-window.loadSolutions = (forceRemote) => FixVaultApp.loadSolutions(forceRemote);
-window.renderFilteredSolutions = () => FixVaultApp.renderFilteredSolutions();
-window.updateFavCount = () => FixVaultApp.updateFavCount();
+  const exportDash = document.getElementById('btnExportDash');
+  if (exportDash) exportDash.addEventListener('click', () => Dashboard.exportJSON(window.allSolutions));
+
+  const refreshDash = document.getElementById('btnRefreshDash');
+  if (refreshDash) refreshDash.addEventListener('click', () => Dashboard.open(window.allSolutions));
+}
+
+function bindPaginationEvents() {
+  const prev = document.getElementById('btnPrevPage');
+  const next = document.getElementById('btnNextPage');
+  if (prev) prev.addEventListener('click', () => { if (currentPage > 0) { currentPage--; renderFilteredSolutions(); }});
+  if (next) next.addEventListener('click', () => { currentPage++; renderFilteredSolutions(); });
+}
+
+function bindThemeEvents() {
+  const btn = document.getElementById('btnTheme');
+  if (!btn) return;
+
+  const saved = localStorage.getItem('fixvault_theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  btn.textContent = saved === 'light' ? '☾' : '☀';
+
+  btn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('fixvault_theme', next);
+    btn.textContent = next === 'light' ? '☾' : '☀';
+  });
+}
+
+function bindImportExportEvents() {
+  const btnExport = document.getElementById('btnExport');
+  if (btnExport) btnExport.addEventListener('click', () => Dashboard.exportJSON(window.allSolutions));
+
+  const btnImport = document.getElementById('btnImport');
+  const fileInput = document.getElementById('importFile');
+  if (btnImport && fileInput) {
+    btnImport.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) {
+        Dashboard.importJSON(e.target.files[0], (data) => {
+          let imported = 0;
+          data.forEach(async (item) => {
+            const { id, created_at, ...rest } = item;
+            await saveSolution(rest);
+            imported++;
+          });
+          Toast.show(`${imported} solutions importées`, 'success');
+        });
+        fileInput.value = '';
+      }
+    });
+  }
+}
+
+function bindAccessibilityEvents() {
+  const grid = document.getElementById('solutionsGrid');
+  if (grid) {
+    grid.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const card = e.target.closest('.solution-card');
+        if (card) card.click();
+      }
+    });
+  }
+}
+
+/* ══════════════════════════════════════════════
+ UTILITAIRES
+══════════════════════════════════════════════ */
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Seed demo data */
+window.seedDemoData = async function() {
+  const demos = [
+    { title: "Réinitialiser TCP/IP", category: "Network", problem: "Pas de connexion Internet", solution: "1. Ouvrir CMD en admin\n2. Exécuter les commandes ci-dessous", commands: ["netsh int ip reset", "netsh winsock reset"], tags: ["tcpip", "reset"] },
+    { title: "Spooler bloqué", category: "Printers", problem: "File d'impression bloquée", solution: "Arrêter le spooler et vider le dossier", commands: ["net stop spooler", "del /Q C:\\Windows\\System32\\spool\\PRINTERS\\*", "net start spooler"], tags: ["spooler", "impression"] },
+    { title: "Mot de passe oublié Linux", category: "Linux", problem: "Accès root perdu", solution: "Démarrer en recovery mode et monter le FS", commands: ["mount -o remount,rw /", "passwd root"], tags: ["root", "password"] },
+    { title: "RDP non fonctionnel", category: "Windows", problem: "Connexion bureau à distance impossible", solution: "Vérifier les services et le pare-feu", commands: ["sc query TermService", "netsh advfirewall set allprofiles state off"], tags: ["rdp", "remote"] },
+    { title: "Fail2ban status", category: "Security", problem: "Vérifier les IPs bannies", solution: "Utiliser fail2ban-client", commands: ["fail2ban-client status", "fail2ban-client status sshd"], tags: ["fail2ban", "ssh"] },
+    { title: "Script backup NAS", category: "Scripts", problem: "Sauvegarde automatique", solution: "Script rsync quotidien", commands: ["rsync -avz /data user@nas:/backup"], tags: ["backup", "rsync"] },
+    { title: "Caméra Hikvision reset", category: "Video Surveillance", problem: "Mot de passe caméra oublié", solution: "Utiliser SADP tool ou reset physique", commands: [], tags: ["hikvision", "reset"] },
+  ];
+
+  for (const d of demos) {
+    await saveSolution(d);
+  }
+  Toast.show('Données de démonstration ajoutées ✓', 'success');
+};
