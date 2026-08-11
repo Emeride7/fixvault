@@ -10,6 +10,7 @@
 const SUPABASE_URL = 'https://mgwbmpdniakmqglksnnu.supabase.co';   // ← pas le texte d'exemple
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1nd2JtcGRuaWFrbXFnbGtzbm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDIyNzYsImV4cCI6MjA5MTQxODI3Nn0.hJ4s0LIIVJ8fLAuzS2vfFyDLbFC7EBdncKvBg9FESMs';  // ← longue clé JWT
 
+
 /* ── Initialisation du client Supabase via CDN ── */
 (function loadSupabaseSDK() {
   const script = document.createElement('script');

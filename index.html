@@ -13,72 +13,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <!-- Preload ressources critiques -->
-  <link rel="preload" href="css/style.css" as="style">
-  <link rel="preload" href="js/app.js" as="script">
-  <link rel="preload" href="js/supabaseClient.js" as="script">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-
   <link rel="stylesheet" href="css/style.css">
-
-  <!-- Font display swap pour éviter le blocage -->
-  <style>
-    @font-face {
-      font-family: 'IBM Plex Sans';
-      font-display: swap;
-    }
-    @font-face {
-      font-family: 'IBM Plex Mono';
-      font-display: swap;
-    }
-  </style>
-<style id="splash-style">
-  #app-splash {
-    position: fixed;
-    inset: 0;
-    background: #0d0f12;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 99999;
-    transition: opacity 0.4s ease;
-  }
-  #app-splash.hidden { opacity: 0; pointer-events: none; }
-  #app-splash .splash-logo {
-    font-size: 4rem;
-    color: #00e5a0;
-    margin-bottom: 16px;
-    animation: pulse-icon 2s ease-in-out infinite;
-  }
-  #app-splash .splash-text {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.2rem;
-    color: #e8eaf0;
-    letter-spacing: -0.02em;
-  }
-  #app-splash .splash-text strong { color: #00e5a0; }
-  #app-splash .splash-spinner {
-    width: 28px;
-    height: 28px;
-    border: 2px solid #252a35;
-    border-top-color: #00e5a0;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin-top: 20px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
 </head>
 <body>
-<div id="app-splash">
-  <div class="splash-logo">◈</div>
-  <div class="splash-text">Fix<strong>Vault</strong></div>
-  <div class="splash-spinner"></div>
-</div>
-
 
 <!-- ═══════════════════════════════════════════ TOP BAR ═══════════════════════════════════════════ -->
 <header class="topbar">
@@ -403,14 +340,14 @@
 <div id="toast" class="toast hidden"></div>
 
 <!-- ═══════════════════════════════════════════ SCRIPTS ═══════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="js/supabaseClient.js"></script>
 <script src="js/cache.js"></script>
 <script src="js/categories.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/search.js"></script>
 <script src="js/modal.js"></script>
-<script src="js/dashboard.js" defer></script>
+<script src="js/dashboard.js"></script>
 <script src="js/app.js"></script>
 <!-- Service Worker -->
 <script>

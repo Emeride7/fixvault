@@ -1,12 +1,12 @@
 /**
- * FixVault – Service Worker (optimisé pour démarrage rapide)
+ * FixVault – Service Worker
+ * Cache-first strategy pour GitHub Pages (/fixvault/)
  */
 
-const CACHE_NAME = 'fixvault-v4';
+const CACHE_NAME = 'fixvault-v3';
 const BASE = '/fixvault/';
 
-// Assets CRITIQUES (affichage immédiat)
-const CRITICAL_ASSETS = [
+const STATIC_ASSETS = [
   BASE,
   BASE + 'index.html',
   BASE + 'css/style.css',
@@ -16,14 +16,16 @@ const CRITICAL_ASSETS = [
   BASE + 'js/auth.js',
   BASE + 'js/search.js',
   BASE + 'js/modal.js',
-  BASE + 'js/app.js',
-  BASE + 'manifest.json'
-];
-
-// Assets secondaires (mis en cache en arrière-plan)
-const LAZY_ASSETS = [
   BASE + 'js/dashboard.js',
+  BASE + 'js/app.js',
+  BASE + 'manifest.json',
+  BASE + 'icons/icon-72x72.png',
+  BASE + 'icons/icon-96x96.png',
+  BASE + 'icons/icon-128x128.png',
+  BASE + 'icons/icon-144x144.png',
+  BASE + 'icons/icon-152x152.png',
   BASE + 'icons/icon-192x192.png',
+  BASE + 'icons/icon-384x384.png',
   BASE + 'icons/icon-512x512.png',
   BASE + 'screenshots/screen1.png',
   BASE + 'screenshots/screen2.png',
@@ -33,35 +35,17 @@ const LAZY_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install v4 (fast)');
+  console.log('[SW] Install v3');
   self.skipWaiting();
-
-  // Cache CRITIQUE uniquement pendant l'install (rapide)
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(CRITICAL_ASSETS);
-    }).then(() => {
-      console.log('[SW] Critical assets cached');
-      // Cache lazy en arrière-plan sans bloquer
-      self.clients.matchAll().then(clients => {
-        clients.forEach(c => c.postMessage({ type: 'SW_READY' }));
-      });
-    }).catch(err => console.warn('[SW] Critical cache failed:', err))
-  );
-
-  // Cache les assets secondaires APRÈS l'install
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return Promise.all(
-        LAZY_ASSETS.map(url => 
-          fetch(url, { mode: 'no-cors' }).then(r => cache.put(url, r)).catch(() => {})
-        )
-      );
-    }).then(() => console.log('[SW] Lazy assets cached'))
+      return cache.addAll(STATIC_ASSETS);
+    }).catch(err => console.warn('[SW] Cache failed:', err))
   );
 });
 
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activate');
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -75,21 +59,35 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Stratégie : Stale-While-Revalidate pour les assets (affiche immédiatement, met à jour en fond)
-  if (request.method === 'GET') {
+  // API Supabase → network-first
+  if (url.hostname.includes('supabase.co')) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return networkResponse;
-        }).catch(() => cached);
-
-        return cached || fetchPromise;
-      })
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }
+
+  // Assets statiques → cache-first
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request).then((response) => {
+        if (request.method === 'GET' && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      }).catch(() => {
+        if (request.mode === 'navigate') {
+          return caches.match(BASE + 'index.html');
+        }
+      });
+    })
+  );
 });
