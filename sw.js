@@ -1,12 +1,10 @@
 /**
  * FixVault – Service Worker
- * Cache-first strategy, chemins relatifs auto-détectés
+ * Cache-first strategy pour GitHub Pages (/fixvault/)
  */
 
-const CACHE_NAME = 'fixvault-v2';
-
-// Détecter le chemin de base automatiquement
-const BASE = self.location.pathname.replace(/sw\.js$/, '');
+const CACHE_NAME = 'fixvault-v3';
+const BASE = '/fixvault/';
 
 const STATIC_ASSETS = [
   BASE,
@@ -20,13 +18,24 @@ const STATIC_ASSETS = [
   BASE + 'js/modal.js',
   BASE + 'js/dashboard.js',
   BASE + 'js/app.js',
+  BASE + 'manifest.json',
+  BASE + 'icons/icon-72x72.png',
+  BASE + 'icons/icon-96x96.png',
+  BASE + 'icons/icon-128x128.png',
+  BASE + 'icons/icon-144x144.png',
+  BASE + 'icons/icon-152x152.png',
+  BASE + 'icons/icon-192x192.png',
+  BASE + 'icons/icon-384x384.png',
+  BASE + 'icons/icon-512x512.png',
+  BASE + 'screenshots/screen1.png',
+  BASE + 'screenshots/screen2.png',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap',
   'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js'
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install, base:', BASE);
+  console.log('[SW] Install v3');
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -75,7 +84,6 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       }).catch(() => {
-        // Fallback pour navigation
         if (request.mode === 'navigate') {
           return caches.match(BASE + 'index.html');
         }
